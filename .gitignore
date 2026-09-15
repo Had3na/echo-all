@@ -1,0 +1,15 @@
+.gradle/
+.idea/
+**/build/
+local.properties
+*.iml
+
+.backups/
+.build-tmp/
+.kotlin/
+# Signing: never commit keys or their passwords
+keystore.properties
+*.keystore
+*.jks
+*.apk
+*.zip
