@@ -28,7 +28,9 @@ object StudioEvents {
 
 private const val DOWNLOADS_TABLE = "CREATE TABLE downloads(id INTEGER PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, album TEXT NOT NULL, cover_url TEXT NOT NULL, duration INTEGER NOT NULL)"
 
-private class StudioDatabase(private val context: Context) : SQLiteOpenHelper(context, "studio.db", null, 2) {
+private const val LOUDNESS_TABLE = "CREATE TABLE loudness(uri TEXT PRIMARY KEY, lufs REAL NOT NULL, seconds REAL NOT NULL)"
+
+private class StudioDatabase(private val context: Context) : SQLiteOpenHelper(context, "studio.db", null, 3) {
     var importedLegacy = false; private set
     init { setWriteAheadLoggingEnabled(true) }
 
@@ -41,7 +43,8 @@ private class StudioDatabase(private val context: Context) : SQLiteOpenHelper(co
             "CREATE TABLE lists(id TEXT PRIMARY KEY, position INTEGER NOT NULL, name TEXT NOT NULL, style TEXT NOT NULL, seconds INTEGER NOT NULL, shuffle INTEGER NOT NULL)",
             "CREATE TABLE list_items(list_id TEXT NOT NULL, position INTEGER NOT NULL, uri TEXT NOT NULL, PRIMARY KEY(list_id, position))",
             "CREATE TABLE covers(key TEXT PRIMARY KEY, path TEXT NOT NULL)",
-            DOWNLOADS_TABLE
+            DOWNLOADS_TABLE,
+            LOUDNESS_TABLE
         ).forEach(db::execSQL)
         // Versions up to 0.6 kept everything in the "studio" preferences: carry it over in the same transaction.
         val legacy = context.getSharedPreferences("studio", Context.MODE_PRIVATE).all
@@ -49,6 +52,7 @@ private class StudioDatabase(private val context: Context) : SQLiteOpenHelper(co
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) db.execSQL(DOWNLOADS_TABLE)
+        if (oldVersion < 3) db.execSQL(LOUDNESS_TABLE)
     }
 
     companion object {
@@ -162,6 +166,12 @@ class StudioStore(context: Context) {
         db.delete("covers", "key = ?", arrayOf(key))
         StudioEvents.emit("cover:$key")
         return previous
+    }
+
+    /** Measured integrated loudness and how many seconds it is based on. */
+    fun loudness(uri: String): Pair<Double, Double>? = db.rawQuery("SELECT lufs, seconds FROM loudness WHERE uri = ?", arrayOf(uri)).use { if (it.moveToFirst()) it.getDouble(0) to it.getDouble(1) else null }
+    fun saveLoudness(uri: String, lufs: Double, seconds: Double) {
+        db.insertWithOnConflict("loudness", null, ContentValues().apply { put("uri", uri); put("lufs", lufs); put("seconds", seconds) }, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
     fun addDownload(download: PendingDownload) {

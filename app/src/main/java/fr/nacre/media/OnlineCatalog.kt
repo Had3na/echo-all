@@ -146,6 +146,28 @@ fun parseArchiveItem(identifier: String, json: JSONObject, kind: MediaKind): Arc
         licenseLabel(meta.text("licenseurl"), meta.list("collection")), parsed)
 }
 
+data class RadioStation(val uuid: String, val name: String, val url: String, val favicon: String, val tags: List<String>,
+    val country: String, val codec: String, val bitrate: Int) {
+    val details get() = listOf(country, tags.take(3).joinToString(", "), listOf(codec.takeUnless { it.equals("UNKNOWN", true) }.orEmpty(), if (bitrate > 0) "$bitrate kb/s" else "").filter { it.isNotBlank() }.joinToString(" ")).filter { it.isNotBlank() }.joinToString(" · ")
+}
+
+/** Radio Browser stations: only working HTTPS streams (Android blocks unencrypted audio), one entry per stream. */
+fun parseStations(json: JSONArray): List<RadioStation> = List(json.length()) { json.optJSONObject(it) }.filterNotNull().mapNotNull { s ->
+    val url = s.optString("url_resolved").ifBlank { s.optString("url") }.trim()
+    val name = s.optString("name").trim()
+    if (!url.startsWith("https://") || name.isBlank() || s.optInt("lastcheckok", 1) != 1) null
+    else RadioStation(s.optString("stationuuid"), name.take(120), url, s.optString("favicon").trim().takeIf { it.startsWith("https://") }.orEmpty(),
+        s.optString("tags").split(',').map { it.trim() }.filter { it.isNotBlank() && it.length <= 30 }.distinct(),
+        s.optString("countrycode").uppercase(), s.optString("codec").trim(), s.optInt("bitrate"))
+}.distinctBy { it.url }
+
+fun radioSearchPath(query: String, tag: String, country: String): String = buildString {
+    append("/json/stations/search?hidebroken=true&is_https=true&order=clickcount&reverse=true&limit=60")
+    if (query.isNotBlank()) append("&name=").append(pathSegment(query.trim()))
+    if (tag.isNotBlank()) append("&tag=").append(pathSegment(tag)).append("&tagExact=false")
+    if (country.isNotBlank()) append("&countrycode=").append(pathSegment(country))
+}
+
 fun safeFileName(text: String): String =
     text.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ").trim().trim('.').take(90).ifBlank { "media" }
 

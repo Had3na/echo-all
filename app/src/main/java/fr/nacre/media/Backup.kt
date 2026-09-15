@@ -52,7 +52,7 @@ fun preparePreferences(context: Context, root: JSONObject): () -> Unit {
     j.optJSONArray("homeHidden")?.let { array -> edit.putStringSet("homeHidden", (0 until array.length().coerceAtMost(4)).map { array.optString(it) }.filter { it in homeSections("") }.toSet()) }
     if(j.has("color"))edit.putInt("color",j.getInt("color"))
     for((key,range) in mapOf("mixSeconds" to 0..60,"slideshowSeconds" to 3..15,"minAudioSeconds" to 0..120)) if(j.has(key))edit.putInt(key,j.getInt(key).coerceIn(range))
-    for(key in listOf("private","reduceMotion","tempoSync"))if(j.has(key))edit.putBoolean(key,j.optBoolean(key))
+    for(key in listOf("private","reduceMotion","tempoSync","normalizeVolume"))if(j.has(key))edit.putBoolean(key,j.optBoolean(key))
     for((key,allowed) in mapOf("theme" to listOf("dark","light","system"),"mixStyle" to MIX_STYLES))if(j.optString(key) in allowed)edit.putString(key,j.getString(key))
     for(i in 0..4)if(j.has("eq$i"))edit.putInt("eq$i",j.getInt("eq$i").coerceIn(-12,12))
     j.optJSONArray("excludedFolders")?.let{arr->edit.putStringSet("excludedFolders",List(arr.length().coerceAtMost(1000)){arr.getString(it)}.toSet())}

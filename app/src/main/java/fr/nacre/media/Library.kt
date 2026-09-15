@@ -153,6 +153,17 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         } catch (_: Exception) { message.value = "Impossible d’enregistrer : vérifie ta connexion et réessaie." }
     }
 
+    /** Saves a radio in the library (Musique, folder "Radios") with its logo as cover. */
+    fun addRadio(station: RadioStation) = viewModelScope.launch {
+        try {
+            val entry = LibraryItem(station.url, station.name, MediaKind.MUSIC, "Radio", artist = station.tags.take(2).joinToString(", "),
+                folder = "Radios", addedAt = System.currentTimeMillis(), tagged = true)
+            update { old -> (old + entry).distinctBy { it.uri } }
+            message.value = "${station.name} ajoutée à ta bibliothèque."
+            if (station.favicon.isNotBlank()) runCatching { Covers.saveFromUrls(getApplication(), station.url, listOf(station.favicon)) }
+        } catch (_: Exception) { message.value = "Impossible d’ajouter cette radio." }
+    }
+
     private val collecting = Mutex()
     /** Adds finished downloads to the library (with their cover) and forgets failed ones. Safe to call often. */
     fun collectDownloads() = viewModelScope.launch {

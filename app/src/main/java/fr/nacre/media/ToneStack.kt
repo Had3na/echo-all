@@ -40,6 +40,12 @@ class Biquad(channels: Int) {
             (a + 1) + (a - 1) * c + beta, -2 * ((a - 1) + (a + 1) * c), (a + 1) + (a - 1) * c - beta)
     }
 
+    fun highShelf(hz: Double, db: Double, q: Double, rate: Int) {
+        val a = 10.0.pow(db / 40); val w = 2 * PI * hz / rate; val c = cos(w); val beta = 2 * sqrt(a) * sin(w) / (2 * q)
+        set(a * ((a + 1) + (a - 1) * c + beta), -2 * a * ((a - 1) + (a + 1) * c), a * ((a + 1) + (a - 1) * c - beta),
+            (a + 1) - (a - 1) * c + beta, 2 * ((a - 1) - (a + 1) * c), (a + 1) - (a - 1) * c - beta)
+    }
+
     fun lowPass(hz: Double, q: Double, rate: Int) {
         val w = 2 * PI * hz / rate; val alpha = sin(w) / (2 * q); val c = cos(w)
         set((1 - c) / 2, 1 - c, (1 - c) / 2, 1 + alpha, -2 * c, 1 - alpha)

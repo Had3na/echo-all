@@ -1,8 +1,14 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+// Release signing comes from keystore.properties (not committed); without it, release builds stay unsigned.
+val signing = Properties().apply { rootProject.file("keystore.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) } }
+
 android {
     namespace = "fr.nacre.media"
     compileSdk = 36
@@ -10,8 +16,24 @@ android {
         applicationId = "fr.nacre.media"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.8.0"
+        versionCode = 9
+        versionName = "0.9.0"
+    }
+    signingConfigs {
+        if (signing.containsKey("storeFile")) create("release") {
+            storeFile = file(signing.getProperty("storeFile"))
+            storePassword = signing.getProperty("storePassword")
+            keyAlias = signing.getProperty("keyAlias")
+            keyPassword = signing.getProperty("keyPassword")
+        }
+    }
+    buildTypes {
+        release {
+            // Not debuggable: noticeably smoother UI than the debug APKs used up to 0.8.
+            // Code shrinking (R8) stays off until a build has been tested on a phone: a crash at launch could not be rolled back without uninstalling.
+            isMinifyEnabled = false
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+        }
     }
     buildFeatures { compose = true }
     compileOptions {

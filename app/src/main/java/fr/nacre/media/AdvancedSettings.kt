@@ -33,6 +33,7 @@ fun AdvancedSettings(vm: LibraryViewModel, library: List<LibraryItem>) {
     val theme=remember(revision){prefs.getString("theme","dark")}
     val privateMode=remember(revision){prefs.getBoolean("private",false)}
     val reduced=remember(revision){prefs.getBoolean("reduceMotion",false)}
+    val normalize=remember(revision){prefs.getBoolean("normalizeVolume",true)}
     val minimum=remember(revision){prefs.getInt("minAudioSeconds",0)}
     val export=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->if(uri!=null)scope.launch{message=runCatching{exportBackup(context,uri,library);"Sauvegarde enregistrée."}.getOrElse{"Échec de sauvegarde : ${it.message}"}}}
     val restore=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null)vm.restoreBackup(uri)}
@@ -46,7 +47,8 @@ fun AdvancedSettings(vm: LibraryViewModel, library: List<LibraryItem>) {
             mapOf("Neutre" to listOf(0,0,0,0,0),"Basses" to listOf(5,3,0,-1,0),"Voix" to listOf(-2,0,3,2,-1),"Doux" to listOf(1,0,0,-2,-3)).forEach{(name,levels)->OutlinedButton(onClick={val edit=prefs.edit();levels.forEachIndexed{i,value->edit.putInt("eq$i",value)};edit.apply()}){Text(name)}}
         }
         listOf("60 Hz","250 Hz","1 kHz","4 kHz","16 kHz").forEachIndexed{i,label->Text("$label · ${values[i]} dB");Slider(values[i].toFloat(),{prefs.edit().putInt("eq$i",it.toInt()).apply()},valueRange=-12f..12f,steps=23)}
-        Text("Réglage appliqué immédiatement, y compris pendant les transitions DJ.",fontSize=12.sp,color=Muted)
+        Text("Réglage appliqué immédiatement, y compris pendant les transitions DJ. Un limiteur évite la saturation quand tu montes les bandes.",fontSize=12.sp,color=Muted)
+        Row(verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text("Volume égal entre les morceaux");Text("Utilise le ReplayGain du fichier, sinon le volume mesuré après 30 secondes d’écoute : le réglage s’applique dès la lecture suivante.",fontSize=12.sp,color=Muted)};Switch(normalize,{prefs.edit().putBoolean("normalizeVolume",it).apply()})}
         HorizontalDivider();Text("Scan et confidentialité",fontSize=20.sp)
         OutlinedButton(onClick={folders=true}){Text("Dossiers ignorés · ${excluded.size}")}
         Text("Ignorer les sons de moins de $minimum secondes")

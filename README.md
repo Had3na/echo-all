@@ -1,6 +1,12 @@
+# Echo-All 0.9
+
+Version actuelle : [notes de version](RELEASE-0.9.md).
+
+Construire l’APK à installer : `gradlew.bat :app:assembleRelease` (nécessite `keystore.properties`, non versionné, qui pointe vers la clé de signature sauvegardée dans `C:\Users\Thomas-yann\Echo-All-cles\`).
+
 # Echo-All 0.8
 
-Version actuelle : [notes de version](RELEASE-0.8.md).
+Notes de version : [RELEASE-0.8.md](RELEASE-0.8.md).
 
 # Echo-All 0.7
 

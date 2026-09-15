@@ -159,6 +159,7 @@ private fun NacreApp(vm: LibraryViewModel = viewModel()) {
     var favorites by rememberSaveable { mutableStateOf(false) }
     var streamDialog by rememberSaveable { mutableStateOf(false) }
     var freeMediaOpen by rememberSaveable { mutableStateOf(false) }
+    var radiosOpen by rememberSaveable { mutableStateOf(false) }
     var tagItem by remember { mutableStateOf<LibraryItem?>(null) }
     var playerOpen by rememberSaveable { mutableStateOf(false) }
     var photoId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -240,7 +241,7 @@ private fun NacreApp(vm: LibraryViewModel = viewModel()) {
             }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 12.dp))
             if (page == Page.SOURCES) {
-                Sources(library, importMedia, { streamDialog = true }, { freeMediaOpen = true }, scan, { vm.restoreHidden() }, busy)
+                Sources(library, importMedia, { streamDialog = true }, { freeMediaOpen = true }, { radiosOpen = true }, scan, { vm.restoreHidden() }, busy)
             } else if (page == Page.HOME) {
                 EchoHome(library, prefs, { id -> collectionId = id ?: "__new__"; collectionsOpen = true }, { play(it) }, scan)
             } else {
@@ -314,7 +315,7 @@ private fun NacreApp(vm: LibraryViewModel = viewModel()) {
         }
     }
     if (playback.id.isNotEmpty()) Box(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 72.dp)) {
-        MiniPlayer(playback, player) { if (playback.video) { (context as? MainActivity)?.externalVideo = true; context.startActivity(android.content.Intent(context, VideoActivity::class.java)) } else playerOpen = true }
+        MiniPlayer(playback, player, library.find { it.uri == playback.id }) { if (playback.video) { (context as? MainActivity)?.externalVideo = true; context.startActivity(android.content.Intent(context, VideoActivity::class.java)) } else playerOpen = true }
     }
     EchoWheel(page.ordinal) { index -> page = Page.entries[index]; query = ""; favorites = false; folder = "" }
     }
@@ -322,6 +323,7 @@ private fun NacreApp(vm: LibraryViewModel = viewModel()) {
     if (settingsOpen) SettingsScreen(settings, prefs, library, vm) { settingsOpen = false }
     if (streamDialog) StreamDialog({ streamDialog = false }) { name, url, kind -> vm.stream(name, url, kind); streamDialog = false }
     if (freeMediaOpen) FreeMediaScreen(vm) { freeMediaOpen = false }
+    if (radiosOpen) RadioScreen(vm, player, library) { radiosOpen = false }
     tagItem?.let { target -> TagDialog(target, { match, text, cover -> vm.applyTags(target, match, text, cover) }) { tagItem = null } }
     if (playerOpen && player != null) PlayerScreen(player, playback, playback.video) {
         if (playback.video) player.pause()
@@ -404,10 +406,13 @@ private fun MediaRow(item: LibraryItem, active: Boolean, onPlay: () -> Unit, onF
 }
 
 @Composable
-private fun MiniPlayer(state: PlaybackState, player: Player?, onExpand: () -> Unit) {
+private fun MiniPlayer(state: PlaybackState, player: Player?, item: LibraryItem?, onExpand: () -> Unit) {
     Column(Modifier.padding(horizontal = 12.dp).clip(RoundedCornerShape(18.dp)).background(Panel).clickable(onClick = onExpand)) {
-        Row(Modifier.padding(start = 16.dp, end = 6.dp, top = 3.dp, bottom = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.GraphicEq, null, tint = Lime)
+        Row(Modifier.padding(start = 8.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            // Custom cover, else the picture embedded in the file, else an icon (also for radios and links not in the library).
+            Box(Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)).background(lerp(Panel, Lime, .18f)), contentAlignment = Alignment.Center) {
+                MediaThumbnail(item ?: LibraryItem(state.id, state.title, if (state.video) MediaKind.VIDEO else MediaKind.MUSIC), Modifier.fillMaxSize())
+            }
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(state.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
                 Text(if (state.buffering) "Chargement…" else if (state.playing) "En lecture" else "En pause", color = Muted, fontSize = 11.sp)
@@ -430,7 +435,7 @@ private fun toggle(player: Player?) {
 }
 
 @Composable
-private fun Sources(library: List<LibraryItem>, onImport: () -> Unit, onStream: () -> Unit, onFreeMedia: () -> Unit, onScan: () -> Unit, onRestore: () -> Unit, busy: Boolean) {
+private fun Sources(library: List<LibraryItem>, onImport: () -> Unit, onStream: () -> Unit, onFreeMedia: () -> Unit, onRadios: () -> Unit, onScan: () -> Unit, onRestore: () -> Unit, busy: Boolean) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(22.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { Text("Tes médias, où qu’ils soient.", color = Muted) }
         item { SourceCard(Icons.Rounded.PhoneAndroid, "Ce téléphone", "Détecte tes musiques, vidéos et photos accessibles, sans les choisir une par une.", if (busy) "Scan en cours…" else "Scanner / gérer les accès", { if (!busy) onScan() }) }
@@ -438,6 +443,7 @@ private fun Sources(library: List<LibraryItem>, onImport: () -> Unit, onStream: 
             TextButton(onClick = onRestore, enabled = !busy) { Text("Réafficher les médias masqués du scan") }
             Text("Le scan respecte les autorisations Android. Sur Android 14 et plus, tu peux autoriser toutes les photos ou seulement une sélection.", color = Muted, fontSize = 12.sp)
         }
+        item { SourceCard(Icons.Rounded.Radio, "Radios", "Des milliers de radios du monde entier : écoute en direct et garde tes préférées dans ta bibliothèque.", "Explorer", onRadios) }
         item { SourceCard(Icons.Rounded.CloudDownload, "Musique et vidéos libres", "Cherche une musique ou une vidéo libre de droits (Internet Archive) et télécharge-la avec son titre, son artiste et sa pochette.", "Rechercher", onFreeMedia) }
         item { SourceCard(Icons.Rounded.Language, "Streaming", "Ajoute un lien direct HTTPS audio ou vidéo : MP3, MP4, HLS ou DASH selon le flux.", "Ajouter un lien", onStream) }
         item { Text("Les liens vers une page YouTube, Spotify ou Netflix ne sont pas des flux directs et ne sont pas pris en charge.", fontSize = 12.sp, color = Muted) }

@@ -75,6 +75,24 @@ object Online {
         return parseArchiveSearch(json("https://archive.org/advancedsearch.php?output=json&rows=40&page=$page&sort[]=downloads+desc$fields&q=" + pathSegment(archiveSearchQuery(text, kind))))
     }
 
+    private val radioServers = listOf("de2", "de1", "fi1", "at1", "nl1")
+
+    /** Radio Browser is run by volunteers on several mirrors: try them in turn. */
+    suspend fun searchRadios(query: String, tag: String, country: String): List<RadioStation> = withContext(Dispatchers.IO) {
+        val path = radioSearchPath(query, tag, country)
+        var failure: Exception? = null
+        for (server in radioServers) {
+            try { return@withContext parseStations(org.json.JSONArray(String(read("https://$server.api.radio-browser.info$path", "application/json", 8_000_000), Charsets.UTF_8))) }
+            catch (error: Exception) { failure = error }
+        }
+        throw failure ?: IOException("Annuaire indisponible.")
+    }
+
+    /** Tells the directory a station was played (its popularity ranking relies on it). Best effort. */
+    suspend fun countRadioClick(uuid: String) = withContext(Dispatchers.IO) {
+        if (uuid.isNotBlank()) runCatching { read("https://de2.api.radio-browser.info/json/url/" + pathSegment(uuid), "application/json", 100_000) }
+    }
+
     suspend fun archiveItem(identifier: String, kind: MediaKind): ArchiveItem =
         parseArchiveItem(identifier, json("https://archive.org/metadata/" + pathSegment(identifier)), kind)
 }

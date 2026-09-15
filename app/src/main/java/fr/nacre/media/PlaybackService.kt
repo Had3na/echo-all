@@ -2,7 +2,15 @@ package fr.nacre.media
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Bundle
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Tracks
+import androidx.media3.common.util.BitmapLoader
+import androidx.media3.datasource.DataSourceBitmapLoader
+import androidx.media3.session.CacheBitmapLoader
+import java.io.File
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.Futures
@@ -25,7 +33,10 @@ import androidx.media3.session.MediaSessionService
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class PlaybackService : MediaSessionService() {
     private val rack by lazy { SoundRack(this) }
-    private fun releaseDeck(player: ExoPlayer) { rack.detach(player); player.release() }
+    private fun releaseDeck(player: ExoPlayer) { storeLoudness(player); tagGains.remove(player); rack.detach(player); player.release() }
+    /** ReplayGain read from the current item's tags, per deck: media id → dB. */
+    private val tagGains = HashMap<ExoPlayer, Pair<String, Float>>()
+    private var normalizing = true
     private var session: MediaSession? = null
     private lateinit var active: ExoPlayer
     private var incoming: ExoPlayer? = null
@@ -81,6 +92,20 @@ class PlaybackService : MediaSessionService() {
                         if (reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION) 0 else old.positionMs.coerceAtLeast(0)).apply()
                 }
             }
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                storeLoudness(self)
+                val id = mediaItem?.mediaId
+                rack.measure(self, id?.takeUnless { prefs.getBoolean("private", false) })
+                rack.level(self, levelFor(self))
+            }
+            override fun onTracksChanged(tracks: Tracks) {
+                val id = self.currentMediaItem?.mediaId ?: return
+                val entries = tracks.groups.flatMap { group -> (0 until group.length).flatMap { i ->
+                    group.getTrackFormat(i).metadata?.let { m -> List(m.length()) { m.get(it).toString() } }.orEmpty() } }
+                val gain = replayGainDb(entries)
+                if (gain != null) tagGains[self] = id to gain else tagGains.remove(self)
+                rack.level(self, levelFor(self))
+            }
             override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
                 if (self === active && reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED && !committing) { cancelMix(); saveQueue() }
             }
@@ -109,15 +134,64 @@ class PlaybackService : MediaSessionService() {
         override fun setVolume(volume: Float) { cancelMix(); active.volume = volume }
     }
 
+    private fun levelFor(player: ExoPlayer): Float {
+        if (!normalizing) return 0f
+        val id = player.currentMediaItem?.mediaId ?: return 0f
+        return normalizationDb(tagGains[player]?.takeIf { it.first == id }?.second, studio.loudness(id)?.first)
+    }
+
+    /** Keeps the loudness heard so far; refined as more of the track is played. Applied from the next play on. */
+    private fun storeLoudness(player: ExoPlayer) {
+        if (prefs.getBoolean("private", false)) return
+        val reading = rack.reading(player) ?: return
+        if (reading.seconds < 30) return
+        val stored = studio.loudness(reading.id)
+        if (stored == null || reading.seconds >= stored.second + 20) studio.saveLoudness(reading.id, reading.lufs, reading.seconds)
+    }
+
+    /** Custom cover as artwork, so the notification, lock screen and car/watch controls show it. */
+    private fun withArtwork(item: MediaItem): MediaItem {
+        val path = studio.cover(item.mediaId) ?: return item
+        val uri = if (path.startsWith("/")) Uri.fromFile(File(path)) else Uri.parse(path)
+        return item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().setArtworkUri(uri).build()).build()
+    }
+
+    private fun refreshArtwork(id: String) {
+        val player = active
+        if (outgoing != null || incoming != null) return
+        committing = true
+        try {
+            for (i in 0 until player.mediaItemCount) if (player.getMediaItemAt(i).mediaId == id) player.replaceMediaItem(i, withArtwork(player.getMediaItemAt(i).buildUpon()
+                .setMediaMetadata(player.getMediaItemAt(i).mediaMetadata.buildUpon().setArtworkUri(null).build()).build()))
+        } finally { committing = false }
+    }
+
     override fun onCreate() {
         super.onCreate()
+        normalizing = prefs.getBoolean("normalizeVolume", true)
         active = deck(true)
-        stopStudioEvents = StudioEvents.listen { key -> if (key.startsWith("track:")) trackCache.remove(key.removePrefix("track:")) }
+        stopStudioEvents = StudioEvents.listen { key ->
+            if (key.startsWith("track:")) trackCache.remove(key.removePrefix("track:"))
+            if (key.startsWith("cover:")) refreshArtwork(key.removePrefix("cover:"))
+        }
         restoreQueue()
         prefs.edit().putLong("sleepUntil", 0).apply()
         val launch = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        session = MediaSession.Builder(this, controls(active)).setSessionActivity(launch).setCallback(object : MediaSession.Callback {
+        val bitmaps = CacheBitmapLoader(DataSourceBitmapLoader(this))
+        // Tracks often embed their own picture: a cover chosen in Echo-All (a private file) must win over it.
+        val artwork = object : BitmapLoader {
+            override fun supportsMimeType(mimeType: String) = bitmaps.supportsMimeType(mimeType)
+            override fun decodeBitmap(data: ByteArray): ListenableFuture<Bitmap> = bitmaps.decodeBitmap(data)
+            override fun loadBitmap(uri: Uri): ListenableFuture<Bitmap> = bitmaps.loadBitmap(uri)
+            override fun loadBitmapFromMetadata(metadata: MediaMetadata): ListenableFuture<Bitmap>? =
+                metadata.artworkUri?.takeIf { it.scheme == "file" }?.let { bitmaps.loadBitmap(it) } ?: bitmaps.loadBitmapFromMetadata(metadata)
+        }
+        session = MediaSession.Builder(this, controls(active)).setSessionActivity(launch).setBitmapLoader(artwork).setCallback(object : MediaSession.Callback {
+            override fun onAddMediaItems(mediaSession: MediaSession, controller: MediaSession.ControllerInfo, mediaItems: MutableList<MediaItem>): ListenableFuture<MutableList<MediaItem>> {
+                if (mediaItems.any { it.localConfiguration == null }) return super.onAddMediaItems(mediaSession, controller, mediaItems)
+                return Futures.immediateFuture(mediaItems.map { withArtwork(it) }.toMutableList())
+            }
             override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session).setAvailableSessionCommands(
                     MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon().add(SessionCommand("studio", Bundle.EMPTY)).build()).build()
@@ -230,7 +304,12 @@ class PlaybackService : MediaSessionService() {
                 requestTransition(active.nextMediaItemIndex, 0, true)
             }
         }
-        if (now - lastSave >= 5000) { savePosition(); lastSave = now }
+        if (now - lastSave >= 5000) {
+            savePosition(); lastSave = now
+            storeLoudness(active)
+            val normalize = prefs.getBoolean("normalizeVolume", true)
+            if (normalize != normalizing) { normalizing = normalize; listOfNotNull(active, incoming, outgoing).forEach { rack.level(it, levelFor(it)) } }
+        }
     }
 
     private fun fallbackPending() {
@@ -305,7 +384,7 @@ class PlaybackService : MediaSessionService() {
             val items = List(queue.length()) { i -> val j = queue.getJSONObject(i)
                 MediaItem.Builder().setMediaId(j.getString("id")).setUri(j.getString("uri"))
                     .setMediaMetadata(androidx.media3.common.MediaMetadata.Builder().setTitle(j.optString("title")).setArtist(j.optString("artist"))
-                        .setExtras(Bundle().apply { putBoolean("video", j.optBoolean("video")) }).build()).build() }
+                        .setExtras(Bundle().apply { putBoolean("video", j.optBoolean("video")) }).build()).build().let { withArtwork(it) } }
             val index = items.indexOfFirst { it.mediaId == positions.getString("last", "") }.coerceAtLeast(0)
             active.setMediaItems(items, index, positions.getLong(items[index].mediaId, 0))
             active.shuffleModeEnabled = positions.getBoolean("shuffle", false); active.repeatMode = positions.getInt("repeat", 0)

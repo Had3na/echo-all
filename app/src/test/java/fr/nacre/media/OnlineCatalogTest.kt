@@ -83,6 +83,25 @@ class OnlineCatalogTest {
         assertEquals(listOf("film.webm"), parseArchiveItem("film", json, MediaKind.VIDEO).files.map { it.name })
         assertTrue(parseArchiveItem("film", json, MediaKind.MUSIC).files.isEmpty())
     }
+    @Test fun radioDirectoryKeepsWorkingHttpsStreamsOnly() {
+        val json = org.json.JSONArray("""[
+            {"stationuuid":"u1","name":" Radio Une ","url_resolved":"https://stream.example/une.mp3","favicon":"https://example/logo.png","tags":"pop, rock,,pop","countrycode":"fr","codec":"MP3","bitrate":128,"lastcheckok":1},
+            {"stationuuid":"u2","name":"En clair","url_resolved":"http://stream.example/clair.mp3","lastcheckok":1},
+            {"stationuuid":"u3","name":"Cassée","url_resolved":"https://stream.example/cassee.mp3","lastcheckok":0},
+            {"stationuuid":"u4","name":"Doublon","url_resolved":"https://stream.example/une.mp3","lastcheckok":1},
+            {"stationuuid":"u5","name":"Sans logo sûr","url":"https://stream.example/deux.m3u8","favicon":"http://example/logo.png","codec":"UNKNOWN","bitrate":0}]""")
+        val stations = parseStations(json)
+        assertEquals(listOf("Radio Une", "Sans logo sûr"), stations.map { it.name })
+        assertEquals(RadioStation("u1", "Radio Une", "https://stream.example/une.mp3", "https://example/logo.png", listOf("pop", "rock"), "FR", "MP3", 128), stations[0])
+        assertEquals("FR · pop, rock · MP3 128 kb/s", stations[0].details)
+        assertEquals("", stations[1].favicon); assertEquals("", stations[1].details)
+    }
+    @Test fun radioSearchAlwaysAsksForHttpsAndWorkingStations() {
+        val path = radioSearchPath("fip & co", "jazz", "FR")
+        assertTrue(path.startsWith("/json/stations/search?hidebroken=true&is_https=true"))
+        assertTrue("&name=fip%20%26%20co" in path); assertTrue("&tag=jazz" in path); assertTrue("&countrycode=FR" in path)
+        assertFalse("&name=" in radioSearchPath(" ", "", ""))
+    }
     @Test fun downloadedFileNamesAreSafe() {
         assertEquals("AC DC - Back in Black", safeFileName("AC/DC - Back in: \"Black\"?"))
         assertEquals("media", safeFileName("..."))
