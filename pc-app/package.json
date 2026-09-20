@@ -1,0 +1,38 @@
+{
+  "name": "echo-all-desktop",
+  "version": "0.24.0",
+  "private": true,
+  "description": "Echo-All pour ordinateur",
+  "author": "Had3na",
+  "main": "desktop.cjs",
+  "scripts": {
+    "start": "node prepare-social.mjs && electron .",
+    "test": "node --test",
+    "dist": "node prepare-social.mjs && electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "44.4.3",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "fr.nacre.media.desktop",
+    "productName": "Echo-All",
+    "files": [
+      "desktop.cjs",
+      "server.mjs",
+      "library.mjs",
+      "web/**/*",
+      "package.json",
+      "preload.cjs",
+      "google-login.cjs"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "artifactName": "Echo-All-PC-${version}-Setup.${ext}"
+  }
+}

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Echo-All · Amis</title>
+<style>
+:root{color-scheme:dark;font:16px system-ui;background:#0d0f12;color:#e8ecf1}body{max-width:900px;margin:auto;padding:24px}button,input,textarea{font:inherit;padding:12px;border-radius:12px;border:1px solid #48505c;background:#191d23;color:inherit}button{cursor:pointer}button:hover{border-color:#e879f9}section,article{padding:16px;margin:16px 0;border:1px solid #303642;border-radius:16px}input,textarea{box-sizing:border-box;max-width:100%}textarea{width:100%}#messages{max-height:50vh;overflow:auto}small{color:#bbc3d0}p{overflow-wrap:anywhere}[hidden]{display:none!important}#status{min-height:24px;color:#e879f9}
+</style>
+<a href="/" id="libraryLink" hidden>← Ma bibliothèque</a><h1>Echo-All · Amis</h1>
+<p>Retrouve tes conversations sur ton téléphone et ton ordinateur.</p>
+<p id="status" role="status">Connexion au service…</p>
+<button id="login" hidden>Continuer avec Google</button>
+<div id="account" hidden>
+<p id="identity"></p><button id="logout">Se déconnecter sur cet appareil</button>
+<section><h2>Ajouter un ami</h2><form id="invite"><label>Identifiant de ton ami <input id="friend" required maxlength="128"></label> <button>Inviter</button></form></section>
+<section><h2>Amis et invitations</h2><div id="friends"></div></section>
+<section id="conversation" hidden><h2 id="chatTitle">Conversation</h2><div id="messages"></div>
+<form id="send"><label>Message<textarea id="text" maxlength="4000"></textarea></label><label>Musique, photo ou vidéo (25 Mo maximum)<input id="file" type="file" accept="image/*,audio/*,video/*"></label><p><button id="submit">Envoyer</button></p></form></section>
+</div><script type="module" src="social.mjs"></script></html>

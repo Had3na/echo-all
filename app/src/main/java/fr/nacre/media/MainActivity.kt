@@ -168,6 +168,7 @@ private fun playbackState(player: Player?, onError: (String) -> Unit): PlaybackS
 private fun NacreApp(vm: LibraryViewModel = viewModel()) {
     val context = LocalContext.current
     val (settings, prefs) = rememberPreferences()
+    StartupUpdateNotice(prefs)
     var collectionId by rememberSaveable { mutableStateOf<String?>(null) }
     var collectionsOpen by rememberSaveable { mutableStateOf(false) }
     var albumPhotos by remember { mutableStateOf<List<String>?>(null) }

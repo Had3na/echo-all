@@ -26,9 +26,9 @@ data class UpdateInfo(val versionCode: Int, val versionName: String, val apkUrl:
  * Returns null rather than throwing: a malformed manifest is a reason to stay on this version, not
  * to show an error.
  */
-fun parseUpdateManifest(json: JSONObject): UpdateInfo? {
+fun parseUpdateManifest(json: JSONObject, abi: String = ""): UpdateInfo? {
     val code = json.optInt("versionCode", 0)
-    val url = json.optString("apk").trim()
+    val url = json.optJSONObject("apks")?.optString(abi).orEmpty().ifBlank { json.optString("apk") }.trim()
     // The same guard media links get: HTTPS, a real host, and no credentials smuggled in the URL.
     if (code <= 0 || !validStreamUrl(url)) return null
     return UpdateInfo(code, json.optString("versionName").trim().ifBlank { code.toString() },
@@ -45,6 +45,9 @@ fun installedVersionCode(context: Context): Int = runCatching {
 }.getOrDefault(0)
 
 object Updates {
+    const val DEFAULT_URL = "https://github.com/Had3na/echo-all/releases/latest/download/version.json"
+    fun manifestUrl(prefs: android.content.SharedPreferences): String =
+        prefs.getString("updateUrl", "").orEmpty().ifBlank { DEFAULT_URL }
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build()
 
@@ -67,7 +70,7 @@ object Updates {
         }
         context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
             .putLong("updateCheckedAt", System.currentTimeMillis()).apply()
-        runCatching { parseUpdateManifest(JSONObject(body)) }.getOrNull()
+        parseUpdateManifest(JSONObject(body), Build.SUPPORTED_ABIS.firstOrNull().orEmpty()) ?: throw IOException("Manifeste de version invalide.")
     }
 
     /** Hands the file to Android's download manager, which survives leaving the application. */

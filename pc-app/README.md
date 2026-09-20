@@ -38,3 +38,9 @@ ton compte pourrait de toute façon lire ces fichiers directement.
 L'analyse lit les noms de fichiers, pas les métadonnées internes : l'artiste et le titre sont devinés
 depuis le nom. Aucune pochette. La bibliothèque du téléphone n'est pas encore visible ici : c'est
 l'étape suivante.
+
+## Application Windows
+
+Depuis la racine : npm ci --prefix pc-app puis npm run dist --prefix pc-app.
+Installateur dans pc-app/dist. npm start --prefix pc-app lance la version de développement.
+Configuration des comptes : ../FIREBASE-SETUP.md.

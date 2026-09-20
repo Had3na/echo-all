@@ -1,3 +1,7 @@
+# Echo-All 0.24 (préparation)
+
+Version Windows, comptes Google et amis : [état et limites](RELEASE-0.24.md), [activation Firebase](FIREBASE-SETUP.md).
+
 # Echo-All 0.22
 
 Stockage torrent interne pour éviter le plantage FUSE observé sur le Samsung Android 16. [Détails](RELEASE-0.22.md).

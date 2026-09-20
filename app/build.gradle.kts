@@ -16,8 +16,8 @@ android {
         applicationId = "fr.nacre.media"
         minSdk = 26
         targetSdk = 36
-        versionCode = 23
-        versionName = "0.23.0"
+        versionCode = 24
+        versionName = "0.24.0"
     }
     signingConfigs {
         if (signing.containsKey("storeFile")) create("release") {
@@ -61,7 +61,29 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
 }
+// NewPipe requires protobuf 4.x, which now supplies DescriptorProtos itself.
+// Keep Firebase's other well-known types, removing only the duplicated descriptor classes.
+val firebaseProtoTypes by configurations.creating { isTransitive = false }
+val compatibleFirebaseProtoTypes by tasks.registering(Jar::class) {
+    archiveBaseName.set("firebase-protolite-compatible")
+    from(provider {
+        zipTree(zipTree(firebaseProtoTypes.singleFile).matching { include("classes.jar") }.singleFile)
+    }) {
+        exclude("com/google/protobuf/DescriptorProtos*", "google/protobuf/descriptor.proto")
+    }
+}
 dependencies {
+    firebaseProtoTypes("com.google.firebase:protolite-well-known-types:18.0.1@aar")
+    implementation(files(compatibleFirebaseProtoTypes))
+    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-firestore") {
+        exclude(group = "com.google.firebase", module = "protolite-well-known-types")
+    }
+    implementation("com.google.firebase:firebase-storage")
+    implementation("androidx.credentials:credentials:1.3.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
     implementation("androidx.webkit:webkit:1.15.0")
     implementation(platform("androidx.compose:compose-bom:2025.09.00"))
     implementation("androidx.activity:activity-compose:1.11.0")
@@ -90,6 +112,7 @@ dependencies {
     implementation("org.libtorrent4j:libtorrent4j-android-arm:2.1.0-39")
     if (System.getProperty("os.name").startsWith("Windows")) testRuntimeOnly("org.libtorrent4j:libtorrent4j-windows:2.1.0-39")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("com.google.protobuf:protobuf-javalite:4.33.5")
     // Android's org.json is only a stub in JVM unit tests (studio migration and backup parsing).
     testImplementation("org.json:json:20240303")
 }
@@ -101,3 +124,11 @@ val bundleNotes by tasks.registering(Sync::class) {
     doFirst { check(rootProject.file("notes/web/vendor/pdf.mjs").exists()) { "Run npm ci and npm run vendor in notes/ before building." } }
 }
 tasks.named("preBuild") { dependsOn(bundleNotes) }
+
+// Firebase config is optional: offline media remains available without a cloud project.
+val bundleFirebase by tasks.registering(Sync::class) {
+    from(project.file("google-services.json"))
+    into(layout.buildDirectory.dir("generated/firebaseAssets"))
+}
+android.sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/firebaseAssets"))
+tasks.named("preBuild") { dependsOn(bundleFirebase) }
