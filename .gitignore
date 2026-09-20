@@ -22,3 +22,6 @@ notes/dist/
 notes/web/vendor/
 app/src/main/assets/notes/
 notes/test-results/
+
+# Echo-All PC : jeton d'accès, certificats et journaux locaux
+pc-app/data/

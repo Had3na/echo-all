@@ -29,6 +29,27 @@ class OnlineCatalogTest {
         assertEquals("", plainText("   <div>  </div> "))
     }
 
+    @Test fun aReleaseManifestIsOnlyTrustedWhenItIsWellFormed() {
+        val good = JSONObject("""{"versionCode":24,"versionName":"0.24.0",
+            "apk":"https://example.org/Echo-All-0.24.apk","notes":"<p>Corrections</p>"}""")
+        val info = parseUpdateManifest(good)!!
+        assertEquals(24, info.versionCode)
+        assertEquals("0.24.0", info.versionName)
+        assertEquals("Corrections", info.notes)
+        assertTrue(updateAvailable(23, info))
+        // Same version, or older: nothing to offer.
+        assertFalse(updateAvailable(24, info))
+        assertFalse(updateAvailable(25, info))
+        assertFalse(updateAvailable(23, null))
+        // A link that is not plain HTTPS is refused rather than downloaded.
+        assertNull(parseUpdateManifest(JSONObject("""{"versionCode":24,"apk":"http://example.org/a.apk"}""")))
+        assertNull(parseUpdateManifest(JSONObject("""{"versionCode":24,"apk":"https://user:pass@example.org/a.apk"}""")))
+        assertNull(parseUpdateManifest(JSONObject("""{"versionCode":0,"apk":"https://example.org/a.apk"}""")))
+        assertNull(parseUpdateManifest(JSONObject("{}")))
+        // No name given: the number stands in, rather than an empty heading.
+        assertEquals("24", parseUpdateManifest(JSONObject("""{"versionCode":24,"apk":"https://example.org/a.apk"}"""))!!.versionName)
+    }
+
     @Test fun recordingsPreferOfficialAlbums() {
         val json = JSONObject("""{"recordings":[{"id":"r1","score":97,"title":"Morceau","length":215000,
             "artist-credit":[{"name":"Duo A","joinphrase":" & "},{"name":"B"}],

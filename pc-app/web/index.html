@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Echo-All PC</title>
+<style>
+  :root {
+    --ink: #0d0f12; --panel: #191d23; --line: #262c35;
+    --text: #e8ecf1; --muted: #8d97a5; --accent: #e879f9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ink); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 2; background: var(--ink);
+    border-bottom: 1px solid var(--line); padding: 16px 20px;
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  }
+  h1 { font-size: 19px; margin: 0; font-weight: 600; }
+  .grow { flex: 1 1 260px; }
+  input[type=search], button {
+    font: inherit; color: var(--text); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px; padding: 9px 13px;
+  }
+  input[type=search] { width: 100%; }
+  input[type=search]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button[aria-pressed=true] { background: color-mix(in srgb, var(--accent) 22%, var(--panel)); border-color: var(--accent); }
+  main { padding: 18px 20px 140px; }
+  .count { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  li button.row {
+    width: 100%; text-align: left; display: flex; gap: 14px; align-items: baseline;
+    padding: 11px 14px; border-radius: 12px;
+  }
+  li button.row[aria-current=true] { border-color: var(--accent); }
+  .title { font-weight: 500; }
+  .meta { color: var(--muted); font-size: 13px; margin-left: auto; white-space: nowrap; }
+  .sub { color: var(--muted); font-size: 13px; }
+  footer {
+    position: fixed; inset: auto 0 0 0; background: var(--panel);
+    border-top: 1px solid var(--line); padding: 12px 20px;
+  }
+  footer p { margin: 0 0 8px; font-size: 13px; }
+  audio, video { width: 100%; max-height: 42vh; border-radius: 10px; background: #000; }
+  .empty { color: var(--muted); padding: 40px 0; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Echo-All</h1>
+  <div class="grow"><input type="search" id="q" placeholder="Chercher un titre, un artiste, un dossier…" autocomplete="off"></div>
+  <button id="all" aria-pressed="true">Tout</button>
+  <button id="music" aria-pressed="false">Musique</button>
+  <button id="video" aria-pressed="false">Vidéos</button>
+  <button id="rescan">Réanalyser</button>
+</header>
+<main>
+  <p class="count" id="count">Chargement…</p>
+  <ul id="list"></ul>
+</main>
+<footer id="player" hidden>
+  <p id="now"></p>
+  <div id="surface"></div>
+</footer>
+<script type="module" src="./app.mjs"></script>
+</body>
+</html>
