@@ -11,14 +11,49 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <application android:label="Echo-All" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:theme="@style/Theme.Nacre" android:allowBackup="false" android:supportsRtl="true">
-        <activity android:name=".MainActivity" android:exported="true">
+    <!-- yt-dlp keeps running while Echo-All is off screen; without this Android freezes it mid-download. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Tells the weekly yt-dlp refresh whether the phone is on Wi-Fi. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <application android:name=".EchoApplication" android:label="Echo-All" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:theme="@style/Theme.Nacre" android:allowBackup="false" android:supportsRtl="true">
+        <activity android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout" android:name=".MainActivity" android:exported="true" android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- "Partager vers Echo-All" from the YouTube app. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!-- Opening a youtube.com address with Echo-All. Android 12 and later ask the user to
+                 allow this in "Ouvrir par défaut" first, since the domain is not ours to verify. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="www.youtube.com" />
+                <data android:scheme="https" android:host="m.youtube.com" />
+                <data android:scheme="https" android:host="music.youtube.com" />
+                <data android:scheme="https" android:host="youtu.be" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".NotesActivity" android:exported="true" android:windowSoftInputMode="adjustResize" android:configChanges="orientation|screenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="echoall" android:host="notes" />
+            </intent-filter>
         </activity>
         <activity android:name=".VideoActivity" android:exported="false" android:supportsPictureInPicture="true" android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation" />
+        <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.torrents" android:exported="false" android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/torrent_paths" />
+        </provider>
+        <service android:name=".TorrentDownloadService" android:foregroundServiceType="dataSync" android:exported="false" />
+        <service android:name=".YouTubeDownloadService" android:foregroundServiceType="dataSync" android:exported="false" />
         <service android:name=".PlaybackService" android:foregroundServiceType="mediaPlayback" android:exported="false">
             <intent-filter><action android:name="androidx.media3.session.MediaSessionService" /></intent-filter>
         </service>

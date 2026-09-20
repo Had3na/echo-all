@@ -14,15 +14,31 @@ data class TagCandidate(val title: String, val artist: String, val album: String
         releaseId.takeIf { it.isNotBlank() }?.let { "https://coverartarchive.org/release/$it/front-500" })
 }
 
-data class ArchiveResult(val identifier: String, val title: String, val creator: String, val year: String, val license: String) {
+data class ArchiveResult(val identifier: String, val title: String, val creator: String, val year: String,
+    val license: String, val description: String = "") {
     val thumbnail get() = "https://archive.org/services/img/" + pathSegment(identifier)
 }
 data class ArchiveFile(val name: String, val title: String, val artist: String, val album: String, val track: Int, val durationMs: Long, val sizeBytes: Long, val url: String) {
     val extension get() = name.substringAfterLast('.', "").lowercase()
 }
-data class ArchiveItem(val identifier: String, val title: String, val creator: String, val year: String, val license: String, val files: List<ArchiveFile>) {
+data class ArchiveItem(val identifier: String, val title: String, val creator: String, val year: String,
+    val license: String, val files: List<ArchiveFile>, val description: String = "") {
     val cover get() = "https://archive.org/services/img/" + pathSegment(identifier)
+    val runtime get() = files.maxOfOrNull { it.durationMs } ?: 0L
 }
+
+/** One shelf of the cinema home: a label and the Archive filter that fills it. */
+data class ArchiveRow(val label: String, val filter: String)
+
+val CINEMA_ROWS = listOf(
+    ArchiveRow("Longs métrages", "collection:(feature_films)"),
+    ArchiveRow("Science-fiction", "subject:(\"science fiction\")"),
+    ArchiveRow("Animation", "subject:(animation)"),
+    ArchiveRow("Film noir", "subject:(\"film noir\")"),
+    ArchiveRow("Comédie", "subject:(comedy)"),
+    ArchiveRow("Aventure", "subject:(adventure)"),
+    ArchiveRow("Documentaires", "collection:(prelinger)"),
+)
 
 private val AUDIO_FORMATS = listOf("VBR MP3", "MP3", "320Kbps MP3", "256Kbps MP3", "128Kbps MP3", "Ogg Vorbis", "Flac", "24bit Flac", "Apple Lossless Audio", "AAC", "M4A", "WAVE", "64Kbps MP3")
 private val VIDEO_FORMATS = listOf("h.264", "h.264 IA", "MPEG4", "h.264 HD", "512Kb MPEG4", "Ogg Video", "WebM", "Matroska")
@@ -70,13 +86,36 @@ fun parseRecordings(json: JSONObject): List<TagCandidate> {
     }
 }
 
+/** Only items with a declared licence (Creative Commons / public domain) or artist-approved archives, never lending-only items. */
+private fun archiveGuards(kind: MediaKind): String {
+    val type = if (kind == MediaKind.VIDEO) "movies" else "audio"
+    val allowed = if (kind == MediaKind.VIDEO) "(licenseurl:* OR collection:(prelinger) OR collection:(feature_films))" else "(licenseurl:* OR collection:(etree))"
+    return "mediatype:($type) AND $allowed AND -access-restricted-item:(true)"
+}
+
 fun archiveSearchQuery(text: String, kind: MediaKind): String {
     val words = text.trim().replace(Regex("[()\\[\\]{}\":^~*?\\\\/]"), " ").replace(Regex("\\s+"), " ").trim()
-    val type = if (kind == MediaKind.VIDEO) "movies" else "audio"
-    // Only items with a declared licence (Creative Commons / public domain) or artist-approved archives, never lending-only items.
-    val allowed = if (kind == MediaKind.VIDEO) "(licenseurl:* OR collection:(prelinger) OR collection:(feature_films))" else "(licenseurl:* OR collection:(etree))"
-    return (if (words.isBlank()) "" else "($words) AND ") + "mediatype:($type) AND $allowed AND -access-restricted-item:(true)"
+    return (if (words.isBlank()) "" else "($words) AND ") + archiveGuards(kind)
 }
+
+/** A shelf keeps its own filter untouched: it is written here, not typed by anyone. */
+fun archiveRowQuery(filter: String, kind: MediaKind = MediaKind.VIDEO): String = "($filter) AND " + archiveGuards(kind)
+
+/** Tags that end a line. Everything else is inline and must vanish without leaving a gap. */
+private val BLOCK_TAG = Regex("</?(?:p|br|div|li|tr|h[1-6])\\b[^>]*>", RegexOption.IGNORE_CASE)
+
+/**
+ * Archive descriptions arrive as HTML; a synopsis under a poster wants the sentence only.
+ * Inline tags are removed rather than replaced by a space, so "<b>1954</b>." does not become
+ * "1954 ." — and the ampersand is decoded last, so an escaped entity is not decoded twice.
+ */
+fun plainText(html: String): String = html
+    .replace(BLOCK_TAG, "\n")
+    .replace(Regex("<[^>]*>"), "")
+    .replace("&nbsp;", " ").replace("&quot;", "\"").replace("&#39;", "\u2019")
+    .replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+    .lines().joinToString("\n") { it.replace(Regex("\\s{2,}"), " ").trim() }
+    .replace(Regex("\n{2,}"), "\n").trim()
 
 fun licenseLabel(url: String, collections: List<String> = emptyList()): String {
     val u = url.lowercase()
@@ -105,7 +144,8 @@ fun parseArchiveSearch(json: JSONObject): List<ArchiveResult> {
     return List(docs.length()) { docs.getJSONObject(it) }.mapNotNull { d ->
         val id = d.optString("identifier")
         if (id.isBlank()) null
-        else ArchiveResult(id, d.text("title").ifBlank { id }, d.text("creator"), d.text("year").ifBlank { d.text("date").take(4) }, licenseLabel(d.text("licenseurl"), d.list("collection")))
+        else ArchiveResult(id, d.text("title").ifBlank { id }, d.text("creator"), d.text("year").ifBlank { d.text("date").take(4) },
+            licenseLabel(d.text("licenseurl"), d.list("collection")), plainText(d.text("description")))
     }
 }
 
@@ -143,7 +183,7 @@ fun parseArchiveItem(identifier: String, json: JSONObject, kind: MediaKind): Arc
             parseLength(f.text("length")), f.text("size").toLongOrNull() ?: 0, "https://archive.org/download/" + pathSegment(identifier) + "/" + name.split('/').joinToString("/") { pathSegment(it) })
     }.sortedWith(compareBy<ArchiveFile> { if (it.track == 0) Int.MAX_VALUE else it.track }.thenBy { it.name })
     return ArchiveItem(identifier, meta.text("title").ifBlank { identifier }, creator, meta.text("year").ifBlank { meta.text("date").take(4) },
-        licenseLabel(meta.text("licenseurl"), meta.list("collection")), parsed)
+        licenseLabel(meta.text("licenseurl"), meta.list("collection")), parsed, plainText(meta.text("description")))
 }
 
 data class RadioStation(val uuid: String, val name: String, val url: String, val favicon: String, val tags: List<String>,

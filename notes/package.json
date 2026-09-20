@@ -1,0 +1,19 @@
+{
+  "name": "echo-all-notes",
+  "version": "0.14.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "vendor": "node vendor.mjs"
+  },
+  "dependencies": {
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "6.3.289",
+    "qrcode-generator": "2.0.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

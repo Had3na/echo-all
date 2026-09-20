@@ -32,6 +32,10 @@ suspend fun analyzeAudio(context: Context, uri: String): TrackTools = withContex
         var inputEnd = false; var outputEnd = false
         var sum = 0.0; var samples = 0
         val energy = mutableListOf<Float>()
+        // Level, read in the same pass rather than waiting for the track to have been played
+        // once: an unmeasured track arrives in a transition at whatever level it was mastered.
+        var meter: LoudnessMeter? = null
+        var channel = 0
         val info = MediaCodec.BufferInfo()
         val deadline = android.os.SystemClock.elapsedRealtime() + 120_000
         while (!outputEnd && energy.size < 9000) {
@@ -60,9 +64,12 @@ suspend fun analyzeAudio(context: Context, uri: String): TrackTools = withContex
                         buffer.position(info.offset); buffer.limit(info.offset + info.size)
                         val bytes = if (encoding == AudioFormat.ENCODING_PCM_FLOAT) 4 else 2
                         val window = (rate * channels / 100).coerceAtLeast(1)
+                        val level = meter ?: LoudnessMeter(rate, channels).also { meter = it }
                         while (buffer.remaining() >= bytes) {
                             val value = if (bytes == 4) buffer.float else buffer.short / 32768f
                             sum += value * value; samples++
+                            level.add(value.toDouble(), channel)
+                            if (++channel >= channels) { channel = 0; level.endFrame() }
                             if (samples >= window) { energy += sqrt(sum / samples).toFloat(); samples = 0; sum = 0.0 }
                         }
                         outputEnd = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
@@ -76,6 +83,10 @@ suspend fun analyzeAudio(context: Context, uri: String): TrackTools = withContex
             val from = i * energy.size / 128; val to = ((i + 1) * energy.size / 128).coerceAtLeast(from + 1).coerceAtMost(energy.size)
             energy.subList(from.coerceAtMost(energy.lastIndex), to).maxOrNull()!! / maximum
         }
-        TrackTools(bpm = tempo.bpm, confidence = tempo.confidence, wave = wave)
+        val store = StudioStore(context)
+        // Only when nothing better is known: a figure gathered over a whole play beats 90 seconds.
+        if (store.loudness(uri) == null) meter?.integrated()?.let { store.saveLoudness(uri, it, meter?.seconds ?: 0.0) }
+        TrackTools(bpm = tempo.bpm, confidence = tempo.confidence, wave = wave,
+            beatMs = beatPhaseMs(energy, tempo.bpm))
     } finally { runCatching { codec?.stop() }; codec?.release(); extractor.release() }
 }

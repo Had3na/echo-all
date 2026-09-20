@@ -21,11 +21,9 @@ fun PlaybackExtras(player: Player, shuffle: Boolean, repeat: Int, speed: Float) 
     var queueOpen by remember { mutableStateOf(false) }
     var marksOpen by remember { mutableStateOf(false) }
     var speedMenu by remember { mutableStateOf(false) }
-    var queueName by remember { mutableStateOf("Ma playlist") }
     var revision by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
     val store = remember { StudioStore(context) }
-    val queue = remember(revision, queueOpen, player.currentMediaItemIndex) { List(player.mediaItemCount) { player.getMediaItemAt(it) } }
     if (djOpen && player is MediaController) DjScreen(player) { djOpen = false }
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.horizontalScroll(rememberScrollState())) {
@@ -40,12 +38,29 @@ fun PlaybackExtras(player: Player, shuffle: Boolean, repeat: Int, speed: Float) 
         FilledTonalButton(onClick={djOpen=true}) { Text("Ouvrir le studio DJ") }
         Row { TextButton(onClick={queueOpen=true;revision++}) { Text("File · ${player.mediaItemCount}") }; TextButton(onClick={marksOpen=true}) { Text("Signets") } }
     }
-    if(queueOpen) AlertDialog(onDismissRequest={queueOpen=false},title={Text("File de lecture")},text={
+    if(queueOpen) QueueDialog(player) { queueOpen=false }
+    if(marksOpen) AlertDialog(onDismissRequest={marksOpen=false},title={Text("Signets du média")},text={
+        Column { TextButton(onClick={store.bookmark(player.currentMediaItem?.mediaId.orEmpty(),player.currentPosition);revision++}) { Text("Marquer cette position") }
+            val marks=remember(revision,marksOpen){store.bookmarks(player.currentMediaItem?.mediaId.orEmpty())}
+            LazyColumn(Modifier.heightIn(max=300.dp)) { items(marks.size) { index->TextButton(onClick={player.seekTo(marks[index]);marksOpen=false}){Text(formatPosition(marks[index]))} } }
+        }
+    },confirmButton={TextButton(onClick={marksOpen=false}){Text("Fermer")}})
+}
+
+/** The playback queue: jump to a track, reorder it, drop one, or save the lot as a playlist. */
+@Composable
+fun QueueDialog(player: Player, onDismiss: () -> Unit) {
+    var queueName by remember { mutableStateOf("Ma playlist") }
+    var revision by remember { mutableIntStateOf(0) }
+    val context = LocalContext.current
+    val store = remember { StudioStore(context) }
+    val queue = remember(revision, player.currentMediaItemIndex) { List(player.mediaItemCount) { player.getMediaItemAt(it) } }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("File de lecture") }, text = {
         LazyColumn(Modifier.heightIn(max=440.dp)) {
-            item { OutlinedTextField(queueName,{queueName=it},label={Text("Nom de playlist")});TextButton(onClick={store.saveList(store.newList(queueName,queue.map{it.mediaId}));queueOpen=false}) { Text("Enregistrer la file") } }
+            item { OutlinedTextField(queueName,{queueName=it},label={Text("Nom de playlist")});TextButton(onClick={store.saveList(store.newList(queueName,queue.map{it.mediaId}));onDismiss()}) { Text("Enregistrer la file") } }
             items(queue.size) { index -> val item=queue[index]
                 Column {
-                    TextButton(onClick={player.seekTo(index,0);player.play();queueOpen=false},modifier=Modifier.fillMaxWidth()) { Text("${index+1}. ${item.mediaMetadata.title?.toString().orEmpty()}") }
+                    TextButton(onClick={player.seekTo(index,0);player.play();onDismiss()},modifier=Modifier.fillMaxWidth()) { Text("${index+1}. ${item.mediaMetadata.title?.toString().orEmpty()}") }
                     Row {
                         IconButton(enabled=index>0,onClick={player.moveMediaItem(index,index-1);revision++}) { Icon(Icons.Rounded.ArrowUpward,"Monter") }
                         IconButton(enabled=index<queue.lastIndex,onClick={player.moveMediaItem(index,index+1);revision++}) { Icon(Icons.Rounded.ArrowDownward,"Descendre") }
@@ -54,11 +69,5 @@ fun PlaybackExtras(player: Player, shuffle: Boolean, repeat: Int, speed: Float) 
                 }
             }
         }
-    },confirmButton={TextButton(onClick={queueOpen=false}){Text("Fermer")}})
-    if(marksOpen) AlertDialog(onDismissRequest={marksOpen=false},title={Text("Signets du média")},text={
-        Column { TextButton(onClick={store.bookmark(player.currentMediaItem?.mediaId.orEmpty(),player.currentPosition);revision++}) { Text("Marquer cette position") }
-            val marks=remember(revision,marksOpen){store.bookmarks(player.currentMediaItem?.mediaId.orEmpty())}
-            LazyColumn(Modifier.heightIn(max=300.dp)) { items(marks.size) { index->TextButton(onClick={player.seekTo(marks[index]);marksOpen=false}){Text(formatPosition(marks[index]))} } }
-        }
-    },confirmButton={TextButton(onClick={marksOpen=false}){Text("Fermer")}})
+    }, confirmButton = { TextButton(onClick = onDismiss) { Text("Fermer") } })
 }

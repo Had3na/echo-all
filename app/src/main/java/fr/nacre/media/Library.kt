@@ -29,7 +29,11 @@ data class LibraryItem(
     val scanned: Boolean = false, val durationMs: Long = 0, val artist: String = "",
     val folder: String = "", val addedAt: Long = 0, val album: String = "",
     /** Title/artist/album chosen by the user (online lookup): a phone scan must not overwrite them. */
-    val tagged: Boolean = false
+    val tagged: Boolean = false,
+    val videoSection: String = "", val videoCategory: String = "",
+    val metadataUndo: String = "", val autoMetadataBlocked: Boolean = false,
+    /** From the phone index, on Android 11 and later. Empty everywhere else. */
+    val genre: String = ""
 )
 
 // A NAS provider can supply the same model without changing the UI or playback layer.
@@ -48,7 +52,7 @@ class PhoneLibrary(context: Context) : MediaSource {
             val item = array.getJSONObject(index)
             LibraryItem(item.getString("uri"), item.getString("title"),
                 MediaKind.valueOf(item.getString("kind")), item.getString("source"), item.optBoolean("favorite"),
-                item.optBoolean("scanned"), item.optLong("durationMs"), item.optString("artist"), item.optString("folder"), item.optLong("addedAt"), item.optString("album"), item.optBoolean("tagged"))
+                item.optBoolean("scanned"), item.optLong("durationMs"), item.optString("artist"), item.optString("folder"), item.optLong("addedAt"), item.optString("album"), item.optBoolean("tagged"), item.optString("videoSection"), item.optString("videoCategory"), item.optString("metadataUndo"), item.optBoolean("autoMetadataBlocked"), item.optString("genre"))
         }
     }
     suspend fun save(items: List<LibraryItem>) = withContext(Dispatchers.IO) {
@@ -57,7 +61,7 @@ class PhoneLibrary(context: Context) : MediaSource {
             put("uri", item.uri); put("title", item.title); put("kind", item.kind.name)
             put("source", item.source); put("favorite", item.favorite)
             put("scanned", item.scanned); put("durationMs", item.durationMs); put("artist", item.artist)
-            put("folder", item.folder); put("addedAt", item.addedAt); put("album", item.album); put("tagged", item.tagged)
+            put("folder", item.folder); put("addedAt", item.addedAt); put("album", item.album); put("tagged", item.tagged); put("videoSection", item.videoSection); put("videoCategory", item.videoCategory); put("metadataUndo", item.metadataUndo); put("autoMetadataBlocked", item.autoMetadataBlocked); put("genre", item.genre)
         }) }
         val output = file.startWrite()
         try {
@@ -70,6 +74,10 @@ class PhoneLibrary(context: Context) : MediaSource {
     }
 }
 
+/** A message that can be taken back. Separate from [LibraryViewModel.message] so that an
+ *  ordinary message arriving meanwhile can never inherit somebody else's undo. */
+data class Notice(val text: String, val undo: suspend () -> Unit)
+
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = PhoneLibrary(application)
     private val lock = Mutex()
@@ -77,7 +85,22 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     val items = _items.asStateFlow()
     val busy = MutableStateFlow(true)
     val message = MutableStateFlow<String?>(null)
+    val notice = MutableStateFlow<Notice?>(null)
     private var writable = true
+    private val stopCompanion = StudioEvents.listen { key ->
+        if (key.startsWith("companion:tags:")) viewModelScope.launch { applyAutomaticMetadata() }
+    }
+    override fun onCleared() { stopCompanion(); super.onCleared() }
+    private suspend fun applyAutomaticMetadata() {
+        try {
+            val tags = withContext(Dispatchers.IO) { StudioStore(getApplication()).cacheAll("tags:") }
+            if (_items.value.none { !it.tagged && it.uri in tags }) return
+            update { list -> list.map { item ->
+                val raw = tags[item.uri]
+                if (raw == null) item else runCatching { applyAutomaticTags(item, raw) }.getOrDefault(item)
+            } }
+        } catch (_: Exception) { }
+    }
     private val settings = application.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     init {
@@ -91,6 +114,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     message.value = "Bibliothèque illisible. Redémarre l’application ; les données existantes sont conservées."
                 } finally { busy.value = false }
             }
+            applyAutomaticMetadata()
             collectDownloads()
         }
     }
@@ -142,7 +166,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     /** Applies an online match: text fields and/or cover. */
     fun applyTags(item: LibraryItem, match: TagCandidate, text: Boolean, cover: Boolean) = viewModelScope.launch {
         try {
-            if (text) update { list -> list.map { if (it.uri == item.uri) it.copy(title = match.title, artist = match.artist, album = match.album.ifBlank { it.album }, tagged = true) else it } }
+            if (text) withContext(Dispatchers.IO) { StudioStore(getApplication()).cache("tags:" + item.uri, JSONObject().put("title", match.title).put("artist", match.artist).put("album", match.album).put("manual", true).toString()) }
+            if (text) update { list -> list.map { if (it.uri == item.uri) it.copy(title = match.title, artist = match.artist, album = match.album.ifBlank { it.album }, tagged = true, metadataUndo = "") else it } }
             val found = !cover || Covers.saveFromUrls(getApplication(), item.uri, match.covers)
             message.value = when {
                 cover && !found -> if (text) "Informations enregistrées. Aucune pochette disponible pour cette sortie." else "Aucune pochette disponible pour cette sortie."
@@ -162,6 +187,89 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             message.value = "${station.name} ajoutée à ta bibliothèque."
             if (station.favicon.isNotBlank()) runCatching { Covers.saveFromUrls(getApplication(), station.url, listOf(station.favicon)) }
         } catch (_: Exception) { message.value = "Impossible d’ajouter cette radio." }
+    }
+
+    /**
+     * Keeps a YouTube track without downloading it: the entry points at its watch address, exactly
+     * as a radio entry points at its stream. The player already knows how to resolve that address,
+     * so the track becomes favouritable, sortable into playlists and resumable like any other.
+     */
+    fun keepYouTube(watchUrl: String, title: String, artist: String, durationMs: Long, coverUrl: String) = viewModelScope.launch {
+        try {
+            val watch = cleanWatchUrl(watchUrl)
+            if (_items.value.any { it.uri == watch }) { message.value = "Ce titre est déjà dans ta bibliothèque."; return@launch }
+            val entry = LibraryItem(watch, title, MediaKind.MUSIC, "YouTube", artist = artist,
+                folder = "YouTube", addedAt = System.currentTimeMillis(), durationMs = durationMs, tagged = true)
+            update { old -> (old + entry).distinctBy { it.uri } }
+            notice.value = Notice(title + " gardé dans ta bibliothèque.") {
+                update { list -> list.filterNot { it.uri == watch } }
+                message.value = "Retiré de ta bibliothèque."
+            }
+            if (coverUrl.isNotBlank()) runCatching {
+                withContext(Dispatchers.IO) { Covers.saveFromUrls(getApplication(), watch, listOf(coverUrl)) }
+            }
+        } catch (_: Exception) { message.value = "Impossible de garder ce titre." }
+    }
+
+    /** Batch removal from a multiple selection: one message, one undo for the whole lot. */
+    fun removeAll(items: List<LibraryItem>) = viewModelScope.launch {
+        if (items.isEmpty()) return@launch
+        try {
+            val uris = items.map { it.uri }.toSet()
+            val scanned = items.filter { it.scanned }.map { it.uri }
+            if (scanned.isNotEmpty()) settings.edit().putStringSet("hidden",
+                settings.getStringSet("hidden", emptySet()).orEmpty() + scanned).apply()
+            update { list -> list.filterNot { it.uri in uris } }
+            notice.value = Notice(
+                if (items.size == 1) "Retiré de Echo-All." else "${items.size} médias retirés de Echo-All.") {
+                if (scanned.isNotEmpty()) settings.edit().putStringSet("hidden",
+                    settings.getStringSet("hidden", emptySet()).orEmpty() - scanned.toSet()).apply()
+                update { list -> (list + items).distinctBy { it.uri } }
+                message.value = "Retour à l’état précédent."
+            }
+        } catch (_: Exception) { message.value = "Impossible de retirer ces médias." }
+    }
+
+    /** Finished yt-dlp downloads: the files are already in Musique/Echo-All, only the entries are missing. */
+    internal fun collectTorrent(job: TorrentJob) = viewModelScope.launch {
+        try {
+            val items = withContext(Dispatchers.IO) {
+                job.files.mapNotNull { path ->
+                    val mime = torrentMime(path)
+                    val kind = when {
+                        mime.startsWith("video/") -> MediaKind.VIDEO
+                        mime.startsWith("audio/") -> MediaKind.MUSIC
+                        mime.startsWith("image/") -> MediaKind.PHOTO
+                        else -> return@mapNotNull null
+                    }
+                    val uri = TorrentStore.fileUri(getApplication(), job, path)
+                    LibraryItem(uri.toString(), File(path).nameWithoutExtension, kind, "Torrent", folder = "Torrents/${job.title}", addedAt = System.currentTimeMillis())
+                }
+            }
+            update { old -> (old + items).distinctBy { it.uri } }
+            message.value = if (items.isEmpty()) "Aucun média compatible dans ce torrent." else "${items.size} médias ajoutés à la bibliothèque."
+        } catch (_: Exception) { message.value = "Impossible d’ajouter les fichiers de ce torrent." }
+    }
+
+    fun collectYouTube() = viewModelScope.launch {
+        val done = YouTubeDownloads.active.value.filter { it.done && it.libraryItem != null }
+        if (done.isEmpty()) return@launch
+        try {
+            update { old -> (old + done.map { it.libraryItem!! }).distinctBy { it.uri } }
+            val store = StudioStore(getApplication())
+            done.forEach { job ->
+                // yt-dlp already embeds the thumbnail; this only covers the formats where it could not.
+                if (job.thumbnail.isNotBlank()) runCatching {
+                    withContext(Dispatchers.IO) { Covers.saveFromUrls(getApplication(), job.libraryItem!!.uri, listOf(job.thumbnail), onlyIfMissing = true) }
+                }
+                youtubeVideoId(job.watchUrl)?.let { id ->
+                    withContext(Dispatchers.IO) { runCatching { store.cache("yt:" + id, job.libraryItem!!.uri) } }
+                }
+                YouTubeDownloads.forget(job.id)
+            }
+            StudioEvents.emit("youtube")
+            message.value = if (done.size == 1) "Téléchargé : ${done.first().title}" else "${done.size} téléchargements ajoutés à ta bibliothèque."
+        } catch (_: Exception) { message.value = "Impossible d’ajouter ces téléchargements." }
     }
 
     private val collecting = Mutex()
@@ -232,6 +340,37 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         } catch (_: Exception) { message.value = "Impossible d’enregistrer ce flux." }
     }
 
+    fun undoMetadata(item: LibraryItem) = viewModelScope.launch {
+        try {
+            val current = _items.value.find { it.uri == item.uri } ?: return@launch
+            if(current.metadataUndo.isBlank()) return@launch
+            val restored = undoAutomaticTags(current)
+            val store = StudioStore(getApplication())
+            // Block in-flight automatic writes first. The service applies this explicit restore to its queue.
+            withContext(Dispatchers.IO) {
+                store.cache("autoBlocked:" + item.uri, "true")
+                store.cache("tags:" + item.uri, JSONObject(metadataSnapshot(restored)).put("manual", true).put("blocked", true).toString())
+            }
+            update { list -> list.map { if(it.uri == item.uri) undoAutomaticTags(it) else it } }
+            withContext(Dispatchers.IO) {
+                val automaticCover = store.cached("autoCover:" + item.uri)
+                if(automaticCover != null && store.cover(item.uri) == automaticCover) Covers.clear(getApplication(), item.uri)
+            }
+            message.value = "Informations d’origine restaurées. Recherche automatique désactivée pour ce morceau."
+        } catch (_: Exception) { message.value = "Impossible d’annuler la correction." }
+    }
+
+    fun organizeVideo(item: LibraryItem, section: String, category: String) = viewModelScope.launch {
+        try {
+            val before = _items.value.find { it.uri == item.uri }
+            update { list -> list.map { if (it.uri == item.uri && it.kind == MediaKind.VIDEO) it.copy(videoSection = section.takeIf { s -> s in VIDEO_SECTIONS } ?: "daily", videoCategory = category.trim().take(48)) else it } }
+            if (before != null) notice.value = Notice("Vidéo classée.") {
+                update { list -> list.map { if (it.uri == item.uri) it.copy(videoSection = before.videoSection, videoCategory = before.videoCategory) else it } }
+                message.value = "Classement annulé."
+            }
+        } catch (_: Exception) { message.value = "Classement non enregistré." }
+    }
+
     fun favorite(item: LibraryItem) = viewModelScope.launch {
         try { update { list -> list.map { if (it.uri == item.uri) it.copy(favorite = !it.favorite) else it } } }
         catch (_: Exception) { message.value = "Modification non enregistrée." }
@@ -242,7 +381,13 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             if (item.scanned) settings.edit().putStringSet("hidden", settings.getStringSet("hidden", emptySet()).orEmpty() + item.uri).apply()
             update { list -> list.filterNot { it.uri == item.uri } }
             // Retain URI grants: a removed track may still be in the playback queue.
-            message.value = "Retiré de Echo-All. Le fichier reste sur ton téléphone."
+            notice.value = Notice("Retiré de Echo-All. Le fichier reste sur ton téléphone.") {
+                // Un-hiding only this one, where "Réafficher les médias masqués" would bring every one back.
+                if (item.scanned) settings.edit().putStringSet("hidden",
+                    settings.getStringSet("hidden", emptySet()).orEmpty() - item.uri).apply()
+                update { list -> (list + item).distinctBy { it.uri } }
+                message.value = item.title + " est de retour."
+            }
         } catch (_: Exception) { message.value = "Impossible de retirer ce média." }
     }
 }

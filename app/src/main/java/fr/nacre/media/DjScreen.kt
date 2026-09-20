@@ -114,7 +114,7 @@ fun DjScreen(player: MediaController, onDismiss: () -> Unit) {
                     OutlinedTextField(bpmText, { bpmText = it }, label = { Text("BPM manuel · 40 à 240") }, singleLine = true, modifier = Modifier.weight(1f))
                     TextButton(enabled = bpmText.toFloatOrNull()?.let { it in 40f..240f } == true, onClick = { save(tools.copy(bpm = bpmText.toFloat(), confidence = 1f)); bpmText = "" }) { Text("OK") }
                 } }
-                item { Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("SYNC tempo"); Text("Ajuste la vitesse du prochain titre, dans ±25 %. Ne cale pas la phase des battements.", color = Muted, fontSize = 12.sp) }; Switch(sync, { sync = it; prefs.edit().putBoolean("tempoSync", it).apply() }) } }
+                item { Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("SYNC tempo"); Text("Ajuste la vitesse du prochain titre, dans ±6 % au maximum, en comptant aussi la moitié et le double du tempo. Ne cale pas la phase des battements.", color = Muted, fontSize = 12.sp) }; Switch(sync, { sync = it; prefs.edit().putBoolean("tempoSync", it).apply() }) } }
                 item { Text("Points de passage · ${formatPosition(position)}", fontSize = 18.sp) }
                 item { Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { save(tools.copy(cueIn = position, cueOut = tools.cueOut.takeIf { it > position } ?: 0)) }) { Text("Marquer entrée") }

@@ -13,7 +13,9 @@ import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 
 data class TrackTools(val bpm: Float = 0f, val confidence: Float = 0f, val cueIn: Long = 0, val cueOut: Long = 0,
-    val loopIn: Long = 0, val loopOut: Long = 0, val loop: Boolean = false, val wave: List<Float> = emptyList())
+    val loopIn: Long = 0, val loopOut: Long = 0, val loop: Boolean = false, val wave: List<Float> = emptyList(),
+    /** Where the beat grid starts, in milliseconds. 0 when the tempo was never measured. */
+    val beatMs: Long = 0)
 data class SavedList(val id: String, val name: String, val uris: List<String>, val style: String = "smooth", val seconds: Int = 5, val shuffle: Boolean = false)
 
 /** In-process change notifications ("track:<uri>", "lists", "cover:<key>", "plays"), delivered on the main thread. */
@@ -30,13 +32,13 @@ private const val DOWNLOADS_TABLE = "CREATE TABLE downloads(id INTEGER PRIMARY K
 
 private const val LOUDNESS_TABLE = "CREATE TABLE loudness(uri TEXT PRIMARY KEY, lufs REAL NOT NULL, seconds REAL NOT NULL)"
 
-private class StudioDatabase(private val context: Context) : SQLiteOpenHelper(context, "studio.db", null, 3) {
+private class StudioDatabase(private val context: Context) : SQLiteOpenHelper(context, "studio.db", null, 5) {
     var importedLegacy = false; private set
     init { setWriteAheadLoggingEnabled(true) }
 
     override fun onCreate(db: SQLiteDatabase) {
         listOf(
-            "CREATE TABLE tracks(uri TEXT PRIMARY KEY, bpm REAL NOT NULL, confidence REAL NOT NULL, cue_in INTEGER NOT NULL, cue_out INTEGER NOT NULL, loop_in INTEGER NOT NULL, loop_out INTEGER NOT NULL, looping INTEGER NOT NULL, wave TEXT NOT NULL)",
+            "CREATE TABLE tracks(uri TEXT PRIMARY KEY, bpm REAL NOT NULL, confidence REAL NOT NULL, cue_in INTEGER NOT NULL, cue_out INTEGER NOT NULL, loop_in INTEGER NOT NULL, loop_out INTEGER NOT NULL, looping INTEGER NOT NULL, wave TEXT NOT NULL, beat INTEGER NOT NULL DEFAULT 0)",
             "CREATE TABLE plays(uri TEXT PRIMARY KEY, count INTEGER NOT NULL, last INTEGER NOT NULL)",
             "CREATE TABLE marks(uri TEXT NOT NULL, time INTEGER NOT NULL, PRIMARY KEY(uri, time))",
             "CREATE TABLE pads(uri TEXT NOT NULL, pad INTEGER NOT NULL, time INTEGER NOT NULL, PRIMARY KEY(uri, pad))",
@@ -44,6 +46,7 @@ private class StudioDatabase(private val context: Context) : SQLiteOpenHelper(co
             "CREATE TABLE list_items(list_id TEXT NOT NULL, position INTEGER NOT NULL, uri TEXT NOT NULL, PRIMARY KEY(list_id, position))",
             "CREATE TABLE covers(key TEXT PRIMARY KEY, path TEXT NOT NULL)",
             DOWNLOADS_TABLE,
+            "CREATE TABLE companion(key TEXT PRIMARY KEY, value TEXT NOT NULL)",
             LOUDNESS_TABLE
         ).forEach(db::execSQL)
         // Versions up to 0.6 kept everything in the "studio" preferences: carry it over in the same transaction.
@@ -53,6 +56,8 @@ private class StudioDatabase(private val context: Context) : SQLiteOpenHelper(co
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) db.execSQL(DOWNLOADS_TABLE)
         if (oldVersion < 3) db.execSQL(LOUDNESS_TABLE)
+        if (oldVersion < 4) db.execSQL("CREATE TABLE companion(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        if (oldVersion < 5) db.execSQL("ALTER TABLE tracks ADD COLUMN beat INTEGER NOT NULL DEFAULT 0")
     }
 
     companion object {
@@ -77,7 +82,7 @@ private fun SQLiteDatabase.transaction(block: SQLiteDatabase.() -> Unit) {
 
 private fun trackValues(uri: String, data: TrackTools) = ContentValues().apply {
     put("uri", uri); put("bpm", data.bpm); put("confidence", data.confidence); put("cue_in", data.cueIn); put("cue_out", data.cueOut)
-    put("loop_in", data.loopIn); put("loop_out", data.loopOut); put("looping", if (data.loop) 1 else 0); put("wave", encodeWave(data.wave))
+    put("loop_in", data.loopIn); put("loop_out", data.loopOut); put("looping", if (data.loop) 1 else 0); put("wave", encodeWave(data.wave)); put("beat", data.beatMs)
 }
 
 private fun writeList(db: SQLiteDatabase, list: SavedList) {
@@ -108,9 +113,27 @@ class StudioStore(context: Context) {
     private val app = context.applicationContext
     private val db get() = StudioDatabase.open(app)
 
-    fun track(uri: String): TrackTools = db.rawQuery("SELECT bpm, confidence, cue_in, cue_out, loop_in, loop_out, looping, wave FROM tracks WHERE uri = ?", arrayOf(uri)).use { c ->
+    fun cached(key: String): String? = db.rawQuery("SELECT value FROM companion WHERE key = ?", arrayOf(key)).use { if (it.moveToFirst()) it.getString(0) else null }
+    fun cache(key: String, value: String) {
+        db.insertWithOnConflict("companion", null, ContentValues().apply { put("key", key); put("value", value) }, SQLiteDatabase.CONFLICT_REPLACE)
+        StudioEvents.emit("companion:$key")
+    }
+    fun cacheAll(prefix: String): Map<String, String> = db.rawQuery("SELECT key,value FROM companion WHERE key LIKE ?", arrayOf("$prefix%")).use { c -> buildMap { while(c.moveToNext()) put(c.getString(0).removePrefix(prefix), c.getString(1)) } }
+    fun setCoverIfMissing(key: String, path: String): Boolean {
+        var added = false
+        db.transaction {
+            if(cached("autoBlocked:$key") != "true") {
+                added = insertWithOnConflict("covers", null, ContentValues().apply { put("key", key); put("path", path) }, SQLiteDatabase.CONFLICT_IGNORE) != -1L
+                if(added) insertWithOnConflict("companion", null, ContentValues().apply { put("key", "autoCover:$key"); put("value", path) }, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+        }
+        if (added) StudioEvents.emit("cover:$key")
+        return added
+    }
+
+    fun track(uri: String): TrackTools = db.rawQuery("SELECT bpm, confidence, cue_in, cue_out, loop_in, loop_out, looping, wave, beat FROM tracks WHERE uri = ?", arrayOf(uri)).use { c ->
         if (!c.moveToFirst()) TrackTools()
-        else TrackTools(c.getFloat(0), c.getFloat(1), c.getLong(2), c.getLong(3), c.getLong(4), c.getLong(5), c.getInt(6) != 0, decodeWave(c.getString(7)))
+        else TrackTools(c.getFloat(0), c.getFloat(1), c.getLong(2), c.getLong(3), c.getLong(4), c.getLong(5), c.getInt(6) != 0, decodeWave(c.getString(7)), c.getLong(8))
     }
     fun saveTrack(uri: String, data: TrackTools) {
         require(data.cueIn >= 0 && (data.cueOut == 0L || data.cueOut > data.cueIn))
@@ -204,4 +227,4 @@ class StudioStore(context: Context) {
 
 fun LibraryItem.playable(): MediaItem = MediaItem.Builder().setMediaId(uri).setUri(uri)
     .setMediaMetadata(MediaMetadata.Builder().setTitle(title).setArtist(artist.ifBlank { source })
-        .setExtras(Bundle().apply { putBoolean("video", kind == MediaKind.VIDEO) }).build()).build()
+        .setAlbumTitle(album).setExtras(Bundle().apply { putBoolean("video", kind == MediaKind.VIDEO); putBoolean("tagged", tagged); putBoolean("autoMetadataBlocked", autoMetadataBlocked) }).build()).build()

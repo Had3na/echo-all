@@ -47,7 +47,7 @@ object Online {
         } finally { connection.disconnect() }
     }
 
-    private suspend fun json(url: String): JSONObject = withContext(Dispatchers.IO) {
+    internal suspend fun json(url: String): JSONObject = withContext(Dispatchers.IO) {
         fun fetch() = JSONObject(String(read(url, "application/json", 8_000_000), Charsets.UTF_8))
         // MusicBrainz answers 503 when requests come too fast: wait and retry twice.
         repeat(2) { attempt ->
@@ -70,10 +70,19 @@ object Online {
         finally { lastMusicBrainz = SystemClock.elapsedRealtime() }
     }
 
-    suspend fun searchArchive(text: String, kind: MediaKind, page: Int = 1): List<ArchiveResult> {
-        val fields = listOf("identifier", "title", "creator", "year", "date", "licenseurl", "collection").joinToString("") { "&fl[]=$it" }
-        return parseArchiveSearch(json("https://archive.org/advancedsearch.php?output=json&rows=40&page=$page&sort[]=downloads+desc$fields&q=" + pathSegment(archiveSearchQuery(text, kind))))
-    }
+    private val archiveFields = listOf("identifier", "title", "creator", "year", "date", "licenseurl", "collection", "description")
+        .joinToString("") { "&fl[]=$it" }
+
+    private suspend fun archiveQuery(query: String, rows: Int, page: Int, sort: String): List<ArchiveResult> =
+        parseArchiveSearch(json("https://archive.org/advancedsearch.php?output=json&rows=$rows&page=$page&sort[]=" +
+            pathSegment(sort) + archiveFields + "&q=" + pathSegment(query)))
+
+    suspend fun searchArchive(text: String, kind: MediaKind, page: Int = 1): List<ArchiveResult> =
+        archiveQuery(archiveSearchQuery(text, kind), 40, page, "downloads desc")
+
+    /** One shelf of the cinema home. Shuffled server-side so the row is not the same every evening. */
+    suspend fun archiveShelf(row: ArchiveRow, kind: MediaKind = MediaKind.VIDEO, page: Int = 1): List<ArchiveResult> =
+        archiveQuery(archiveRowQuery(row.filter, kind), 24, page, "downloads desc")
 
     private val radioServers = listOf("de2", "de1", "fi1", "at1", "nl1")
 

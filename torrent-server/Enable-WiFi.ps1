@@ -1,0 +1,1 @@
+New-NetFirewallRule -DisplayName 'Echo-All PC HTTPS local' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 4323 -LocalAddress 192.168.1.17 -RemoteAddress LocalSubnet -Profile Any -Program 'C:\Program Files\nodejs\node.exe'

@@ -13,3 +13,12 @@ keystore.properties
 *.jks
 *.apk
 *.zip
+
+# Notes: generated dependencies and private server data
+notes/node_modules/
+notes/data/
+notes/.env
+notes/dist/
+notes/web/vendor/
+app/src/main/assets/notes/
+notes/test-results/

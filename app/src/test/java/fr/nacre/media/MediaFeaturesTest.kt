@@ -40,15 +40,18 @@ class MediaFeaturesTest {
         assertEquals(1, result.size)
         assertEquals(song.uri, result.single().uri)
     }
-    @Test fun fadesRemainBoundedWithNoGainJump() {
+    @Test fun fadesRemainBoundedAndKeepTheirLoudness() {
         listOf(-100L, 0L, 500L, 1500L, 3000L, 5000L).forEach { elapsed ->
             val gains = mixGains(elapsed, 3000)
             assertTrue(gains.incoming in 0f..1f)
             assertTrue(gains.outgoing in 0f..1f)
-            assertEquals(1f, gains.incoming + gains.outgoing, .0001f)
+            // Equal power: the pair is as loud in the middle of the fade as one deck alone.
+            assertEquals(1f, gains.power, .0001f)
         }
         assertEquals(MixGains(1f, 0f), mixGains(0, 3000))
         assertEquals(MixGains(0f, 1f), mixGains(3000, 3000))
         assertEquals(MixGains(0f, 1f), mixGains(0, 0))
+        // The old constant-sum law sat at .5/.5 here, about 3 dB below the rest of the track.
+        assertEquals(0.707f, mixGains(1500, 3000).incoming, .001f)
     }
 }

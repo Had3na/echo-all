@@ -1,5 +1,11 @@
 package fr.nacre.media
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -61,7 +67,11 @@ fun CollectionsScreen(library: List<LibraryItem>, player: MediaController?, onPh
         Surface(Modifier.fillMaxSize(), color = Ink) {
             Column(Modifier.safeDrawingPadding().padding(horizontal = 16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) { Text(current.name.ifBlank { "Sans titre" }, fontSize = 24.sp, maxLines = 1, overflow = TextOverflow.Ellipsis); Text("${current.uris.size} médias · Enregistrement automatique", color = Muted, fontSize = 11.sp) }
+                    Box(Modifier.padding(end = 12.dp).size(56.dp).clip(RoundedCornerShape(14.dp)).background(Panel), contentAlignment = Alignment.Center) {
+                        if (cover != null) coil.compose.AsyncImage(cover, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                        else current.uris.firstNotNullOfOrNull { byUri[it] }?.let { MediaThumbnail(it, Modifier.fillMaxSize()) } ?: Icon(Icons.Rounded.LibraryMusic, null, tint = Lime)
+                    }
+                    Column(Modifier.weight(1f)) { Text(current.name.ifBlank { "Sans titre" }, fontSize = 24.sp, maxLines = 1, overflow = TextOverflow.Ellipsis); Text("${current.uris.size} titres", color = Muted, fontSize = 11.sp) }
                     Box {
                         IconButton(onClick = { smartMenu = true }) { Icon(Icons.Rounded.AutoAwesome, "Sélections intelligentes") }
                         DropdownMenu(smartMenu, { smartMenu = false }) {
@@ -79,11 +89,10 @@ fun CollectionsScreen(library: List<LibraryItem>, player: MediaController?, onPh
                     lists.forEach { list -> FilterChip(current.id == list.id, { current = list; selectedId = list.id; message = "" }, { Text(list.name.ifBlank { "Sans titre" }, maxLines = 1) }) }
                 }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { start() }) { Icon(Icons.Rounded.PlayArrow, null); Text("Lire") }
+                    Button(onClick = { start() }, contentPadding = PaddingValues(horizontal = 28.dp, vertical = 12.dp)) { Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Écouter") }
                     FilterChip(current.shuffle, { update(current.copy(shuffle = !current.shuffle)) }, { Text(if (current.shuffle) "Aléatoire activé" else "Aléatoire désactivé") })
                     if (current.uris.any { byUri[it]?.kind == MediaKind.PHOTO }) OutlinedButton(onClick = { onPhotos(current.uris.filter { byUri[it]?.kind == MediaKind.PHOTO }); onDismiss() }) { Text("Album") }
                 }
-                Text("Le mode aléatoire s’applique quand tu appuies sur Lire.", color = Muted, fontSize = 11.sp)
                 TabRow(selectedTabIndex = tab) {
                     listOf("Médias", "Ajouter", "Mix DJ", "Réglages").forEachIndexed { index, title -> Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title, fontSize = 12.sp, maxLines = 1) }) }
                 }
@@ -93,16 +102,33 @@ fun CollectionsScreen(library: List<LibraryItem>, player: MediaController?, onPh
                 LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(vertical = 16.dp)) {
                     when (tab) {
                         0 -> {
-                            item { Text("Ordre de lecture", fontSize = 20.sp); Text("Déplace les titres avec les flèches. Retirer un titre ne supprime pas le fichier du téléphone.", color = Muted, fontSize = 12.sp) }
-                            if (current.uris.isEmpty()) item { OutlinedButton(onClick = { tab = 1 }) { Text("Ajouter les premiers médias") } }
-                            items(current.uris, key = { it }) { uri ->
-                                val index = current.uris.indexOf(uri)
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("${index + 1}", color = Lime, modifier = Modifier.width(28.dp))
-                                    Text(byUri[uri]?.title ?: "Fichier indisponible · relancer le scan", maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                    IconButton(enabled = index > 0, onClick = { val next = current.uris.toMutableList(); java.util.Collections.swap(next, index, index - 1); update(current.copy(uris = next)) }) { Icon(Icons.Rounded.ArrowUpward, "Monter") }
-                                    IconButton(enabled = index < current.uris.lastIndex, onClick = { val next = current.uris.toMutableList(); java.util.Collections.swap(next, index, index + 1); update(current.copy(uris = next)) }) { Icon(Icons.Rounded.ArrowDownward, "Descendre") }
-                                    IconButton(onClick = { update(current.copy(uris = current.uris - uri)) }) { Icon(Icons.Rounded.Remove, "Retirer") }
+                            item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text("Les titres", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                                Text("${current.uris.size}", color = Muted)
+                            } }
+                            if (current.uris.isEmpty()) item { OutlinedButton(onClick = { tab = 1 }) { Text("Ajouter les premiers titres") } }
+                            itemsIndexed(current.uris, key = { _, uri -> uri }) { index, uri ->
+                                val item = byUri[uri]
+                                var menu by remember(uri) { mutableStateOf(false) }
+                                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(enabled = item != null) {
+                                    start(shuffle = false, selection = current.uris.drop(index).mapNotNull { byUri[it] })
+                                }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.size(54.dp).clip(RoundedCornerShape(12.dp)).background(Panel), contentAlignment = Alignment.Center) {
+                                        if (item != null) MediaThumbnail(item, Modifier.fillMaxSize()) else Icon(Icons.Rounded.MusicOff, null, tint = Muted)
+                                    }
+                                    Column(Modifier.weight(1f).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(item?.title ?: "Fichier indisponible", maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                                        Text(item?.artist?.ifBlank { item.album.ifBlank { "Titre ${index + 1}" } } ?: "Relancer le scan", color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                    if (item != null && item.durationMs > 0) Text(mediaClock(item.durationMs), color = Muted, fontSize = 11.sp)
+                                    Box {
+                                        IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "Options du titre") }
+                                        DropdownMenu(menu, { menu = false }) {
+                                            DropdownMenuItem(text = { Text("Monter") }, leadingIcon = { Icon(Icons.Rounded.ArrowUpward, null) }, enabled = index > 0, onClick = { val next = current.uris.toMutableList(); java.util.Collections.swap(next,index,index-1); update(current.copy(uris=next)); menu=false })
+                                            DropdownMenuItem(text = { Text("Descendre") }, leadingIcon = { Icon(Icons.Rounded.ArrowDownward, null) }, enabled = index < current.uris.lastIndex, onClick = { val next = current.uris.toMutableList(); java.util.Collections.swap(next,index,index+1); update(current.copy(uris=next)); menu=false })
+                                            DropdownMenuItem(text = { Text("Retirer de la playlist") }, leadingIcon = { Icon(Icons.Rounded.PlaylistRemove, null) }, onClick = { update(current.copy(uris=current.uris-uri)); menu=false })
+                                        }
+                                    }
                                 }
                             }
                         }

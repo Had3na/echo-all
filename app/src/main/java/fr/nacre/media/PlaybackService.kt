@@ -26,12 +26,17 @@ import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class PlaybackService : MediaSessionService() {
+    private val enrichment by lazy { MusicEnrichment(this) }
     private val rack by lazy { SoundRack(this) }
     private fun releaseDeck(player: ExoPlayer) { storeLoudness(player); tagGains.remove(player); rack.detach(player); player.release() }
     /** ReplayGain read from the current item's tags, per deck: media id → dB. */
@@ -56,6 +61,10 @@ class PlaybackService : MediaSessionService() {
     private var lastSave = 0L
     private var baseVolume = 1f
     private var committing = false
+    /** The media id whose YouTube link has already been refetched once, so a dead video cannot loop. */
+    private var youtubeRetried = ""
+    /** Consecutive playback failures, so an entirely unplayable queue stops instead of racing through. */
+    private var failures = 0
     private val prefs by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
     private val positions by lazy { getSharedPreferences("playback", MODE_PRIVATE) }
     private val handler = Handler(Looper.getMainLooper())
@@ -65,7 +74,21 @@ class PlaybackService : MediaSessionService() {
         override fun run() { tick(); handler.postDelayed(this, if (active.isPlaying || incoming != null || outgoing != null) 50L else 1000L) }
     }
 
-    private fun deck(focus: Boolean): ExoPlayer = SoundChain().let { chain -> ExoPlayer.Builder(this, rack.renderers(chain)).setSeekBackIncrementMs(10_000).setSeekForwardIncrementMs(10_000).build().apply {
+    /**
+     * YouTube entries keep their watch URL in the queue; the real stream is fetched as the player
+     * opens each one, so a long playlist costs one extraction per track actually played and an
+     * expired link is simply fetched again. Every other source passes through untouched.
+     */
+    private val sources by lazy {
+        DefaultMediaSourceFactory(ResolvingDataSource.Factory(
+            DefaultDataSource.Factory(this, DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)),
+            YouTubeStreamResolver(
+                { runCatching { AudioQuality.valueOf(prefs.getString("ytAudio", null) ?: "") }.getOrDefault(AudioQuality.BEST) },
+                { runCatching { VideoQuality.valueOf(prefs.getString("ytVideo", null) ?: "") }.getOrDefault(VideoQuality.FHD) },
+                { streamingBlocked(this) })))
+    }
+
+    private fun deck(focus: Boolean): ExoPlayer = SoundChain().let { chain -> ExoPlayer.Builder(this, rack.renderers(chain)).setMediaSourceFactory(sources).setSeekBackIncrementMs(10_000).setSeekForwardIncrementMs(10_000).build().apply {
         setAudioAttributes(attributes, focus)
         setHandleAudioBecomingNoisy(true)
         setWakeMode(C.WAKE_MODE_NETWORK)
@@ -78,6 +101,13 @@ class PlaybackService : MediaSessionService() {
             override fun onIsPlayingChanged(playing: Boolean) {
                 if (self === active && playing) {
                     val id = active.currentMediaItem?.mediaId.orEmpty()
+                    if (id == youtubeRetried) youtubeRetried = ""
+                    failures = 0
+                    if (prefs.getBoolean("tempoSync", false)) {
+                        TempoScanner.request(this@PlaybackService, id)
+                        if (active.hasNextMediaItem()) TempoScanner.request(this@PlaybackService,
+                            active.getMediaItemAt(active.nextMediaItemIndex).mediaId)
+                    }
                     if (id != lastMarked && !prefs.getBoolean("private", false)) { studio.markPlayed(id); lastMarked = id }
                 }
             }
@@ -114,10 +144,46 @@ class PlaybackService : MediaSessionService() {
             override fun onPlaybackParametersChanged(parameters: androidx.media3.common.PlaybackParameters) { if (self === active && !committing) cancelMix() }
             override fun onPlayerError(error: PlaybackException) {
                 if (self === incoming) fallbackPending()
-                if (self === active) cancelMix()
+                if (self !== active) return
+                cancelMix()
+                if (!refetchYouTube(self)) skipUnplayable(self)
             }
         })
     } }
+
+    /**
+     * YouTube revokes a stream link without warning, and the resolved URL is held for an hour so that
+     * seeking does not refetch it every time. Without this, one dead link makes the track unplayable
+     * for that whole hour: pressing play again just replays the same cached URL. Drop it and retry once.
+     */
+    private fun refetchYouTube(player: ExoPlayer): Boolean {
+        val id = player.currentMediaItem?.mediaId ?: return false
+        if (youtubeVideoId(id) == null || youtubeRetried == id) return false
+        youtubeRetried = id
+        YouTube.forget(id)
+        handler.post {
+            if (player.currentMediaItem?.mediaId != id) return@post
+            player.prepare()
+            player.play()
+        }
+        return true
+    }
+
+    /**
+     * One unplayable track should not end the listening. Moves on to the next one, but gives up
+     * after three failures in a row so a queue nothing can play — offline, say — does not run
+     * through every entry in a second.
+     */
+    private fun skipUnplayable(player: ExoPlayer) {
+        failures++
+        if (failures > 3 || !player.hasNextMediaItem()) { failures = 0; return }
+        handler.post {
+            if (player.playerError == null || !player.hasNextMediaItem()) return@post
+            player.seekToNextMediaItem()
+            player.prepare()
+            player.play()
+        }
+    }
 
     // Route session, headset and notification skip commands through the same transition path.
     private fun controls(player: ExoPlayer): Player = object : ForwardingPlayer(player) {
@@ -151,14 +217,17 @@ class PlaybackService : MediaSessionService() {
 
     /** Custom cover as artwork, so the notification, lock screen and car/watch controls show it. */
     private fun withArtwork(item: MediaItem): MediaItem {
-        val path = studio.cover(item.mediaId) ?: return item
+        val cached = studio.cached("tags:" + item.mediaId)?.let { runCatching { JSONObject(it) }.getOrNull() }
+        val updated = if (cached != null && item.mediaMetadata.extras?.getBoolean("autoMetadataBlocked") != true && (item.mediaMetadata.extras?.getBoolean("tagged") != true || cached.optBoolean("manual"))) item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().setTitle(cached.optString("title")).setArtist(cached.optString("artist")).setAlbumTitle(cached.optString("album")).build()).build() else item
+        val path = studio.cover(item.mediaId) ?: return updated
         val uri = if (path.startsWith("/")) Uri.fromFile(File(path)) else Uri.parse(path)
-        return item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().setArtworkUri(uri).build()).build()
+        return updated.buildUpon().setMediaMetadata(updated.mediaMetadata.buildUpon().setArtworkUri(uri).build()).build()
     }
 
+    private val pendingArtwork = mutableSetOf<String>()
     private fun refreshArtwork(id: String) {
         val player = active
-        if (outgoing != null || incoming != null) return
+        if (outgoing != null || incoming != null) { pendingArtwork += id; return }
         committing = true
         try {
             for (i in 0 until player.mediaItemCount) if (player.getMediaItemAt(i).mediaId == id) player.replaceMediaItem(i, withArtwork(player.getMediaItemAt(i).buildUpon()
@@ -171,7 +240,10 @@ class PlaybackService : MediaSessionService() {
         normalizing = prefs.getBoolean("normalizeVolume", true)
         active = deck(true)
         stopStudioEvents = StudioEvents.listen { key ->
+            if (key.startsWith("companion:autoBlocked:")) enrichment.retry()
+            if (key.startsWith("companion:retry:")) enrichment.retry()
             if (key.startsWith("track:")) trackCache.remove(key.removePrefix("track:"))
+            if (key.startsWith("companion:tags:")) refreshArtwork(key.removePrefix("companion:tags:"))
             if (key.startsWith("cover:")) refreshArtwork(key.removePrefix("cover:"))
         }
         restoreQueue()
@@ -231,7 +303,11 @@ class PlaybackService : MediaSessionService() {
         candidate.playbackParameters = active.playbackParameters
         if (prefs.getBoolean("tempoSync", false)) {
             val match = matchedSpeed(track(active.currentMediaItem?.mediaId).bpm, active.playbackParameters.speed, track(active.getMediaItemAt(index).mediaId).bpm)
-            if (match != null) candidate.setPlaybackSpeed(match) else djMessage = "SYNC ignoré : renseigne les BPM, avec un écart de tempo inférieur à 25 %."
+            // Without a match the track plays at its own speed. Inheriting the previous
+            // adjustment would stretch a track the figure was never computed for, which is how
+            // a whole queue ended up drifting slow or fast.
+            candidate.setPlaybackSpeed(match ?: 1f)
+            if (match == null) djMessage = "SYNC ignoré : tempos trop éloignés ou BPM pas encore mesurés. Lecture à vitesse normale."
         }
         candidate.setMediaItems(List(active.mediaItemCount) { active.getMediaItemAt(it) }, index, if (position == 0L) track(active.getMediaItemAt(index).mediaId).cueIn else position)
         candidate.prepare()
@@ -244,7 +320,11 @@ class PlaybackService : MediaSessionService() {
         incoming = null
         val old = active
         baseVolume = old.volume
-        val window = mixWindow(mixMs(), old.currentPosition, track(old.currentMediaItem?.mediaId).cueOut, old.duration, old.playbackParameters.speed)
+        val leaving = track(old.currentMediaItem?.mediaId)
+        // A fade of so many seconds ends in the middle of a beat; a whole number of beats ends with the music.
+        val asked = if (prefs.getBoolean("tempoSync", false)) snapMixToBeats(mixMs(), leaving.bpm, old.playbackParameters.speed) else mixMs()
+        val window = mixWindow(asked, old.currentPosition, leaving.cueOut, old.duration, old.playbackParameters.speed)
+        alignBeats(old, candidate, leaving)
         committing = true
         try {
             if (!prefs.getBoolean("private", false)) positions.edit().putLong(old.currentMediaItem?.mediaId.orEmpty(), if (automatic) 0 else old.currentPosition).apply()
@@ -261,7 +341,15 @@ class PlaybackService : MediaSessionService() {
         } finally { committing = false }
     }
 
+    private var lastEnrichmentCheck = 0L
     private fun tick() {
+        if (outgoing == null && incoming == null && pendingArtwork.isNotEmpty()) {
+            val ids = pendingArtwork.toList(); pendingArtwork.clear(); ids.forEach { refreshArtwork(it) }
+        }
+        if (SystemClock.elapsedRealtime() - lastEnrichmentCheck >= 1000) {
+            lastEnrichmentCheck = SystemClock.elapsedRealtime()
+            enrichment.request(active.currentMediaItem?.buildUpon()?.setMediaMetadata(active.mediaMetadata)?.build(), active.duration, active.isPlaying, active.isCurrentMediaItemLive)
+        }
         rack.update()
         val now = SystemClock.elapsedRealtime()
         val sleepUntil = prefs.getLong("sleepUntil", 0)
@@ -325,6 +413,26 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    /**
+     * Nudges the arriving deck so its beats fall on the leaving one's, at the moment it takes over.
+     *
+     * It has to happen here and not when the deck was prepared: the leaving track kept playing in
+     * between, so any alignment worked out earlier would already be stale. The move is under half a
+     * beat, within what the deck has buffered, and it is skipped entirely unless both tempos and
+     * both grids are known.
+     */
+    private fun alignBeats(old: ExoPlayer, candidate: ExoPlayer, leaving: TrackTools) {
+        if (!prefs.getBoolean("tempoSync", false)) return
+        val arriving = track(candidate.currentMediaItem?.mediaId)
+        if (leaving.bpm <= 0f || arriving.bpm <= 0f) return
+        val aligned = alignedStart(candidate.currentPosition,
+            arriving.beatMs, arriving.bpm, candidate.playbackParameters.speed,
+            old.currentPosition, leaving.beatMs, leaving.bpm, old.playbackParameters.speed)
+        if (aligned != candidate.currentPosition && aligned < (candidate.duration.takeIf { it > 0 } ?: Long.MAX_VALUE)) {
+            candidate.seekTo(aligned)
+        }
+    }
+
     private fun cancelIncoming() {
         val candidate = incoming
         incoming = null
@@ -373,7 +481,7 @@ class PlaybackService : MediaSessionService() {
         for (i in 0 until active.mediaItemCount) {
             val item = active.getMediaItemAt(i)
             queue.put(JSONObject().apply { put("id", item.mediaId); put("uri", item.localConfiguration?.uri?.toString() ?: item.mediaId)
-                put("title", item.mediaMetadata.title); put("artist", item.mediaMetadata.artist); put("video", item.mediaMetadata.extras?.getBoolean("video") == true) })
+                put("title", item.mediaMetadata.title); put("artist", item.mediaMetadata.artist); put("album", item.mediaMetadata.albumTitle); put("tagged", item.mediaMetadata.extras?.getBoolean("tagged") == true); put("video", item.mediaMetadata.extras?.getBoolean("video") == true) })
         }
         positions.edit().putString("queue", queue.toString()).apply()
     }
@@ -384,7 +492,7 @@ class PlaybackService : MediaSessionService() {
             val items = List(queue.length()) { i -> val j = queue.getJSONObject(i)
                 MediaItem.Builder().setMediaId(j.getString("id")).setUri(j.getString("uri"))
                     .setMediaMetadata(androidx.media3.common.MediaMetadata.Builder().setTitle(j.optString("title")).setArtist(j.optString("artist"))
-                        .setExtras(Bundle().apply { putBoolean("video", j.optBoolean("video")) }).build()).build().let { withArtwork(it) } }
+                        .setAlbumTitle(j.optString("album")).setExtras(Bundle().apply { putBoolean("video", j.optBoolean("video")); putBoolean("tagged", j.optBoolean("tagged")) }).build()).build().let { withArtwork(it) } }
             val index = items.indexOfFirst { it.mediaId == positions.getString("last", "") }.coerceAtLeast(0)
             active.setMediaItems(items, index, positions.getLong(items[index].mediaId, 0))
             active.shuffleModeEnabled = positions.getBoolean("shuffle", false); active.repeatMode = positions.getInt("repeat", 0)
@@ -394,10 +502,16 @@ class PlaybackService : MediaSessionService() {
         if (prefs.getBoolean("private", false)) return
         val id = active.currentMediaItem?.mediaId ?: return
         val position = if (active.playbackState == Player.STATE_ENDED) 0 else active.currentPosition.coerceAtLeast(0)
-        positions.edit().putBoolean("shuffle", active.shuffleModeEnabled).putInt("repeat", active.repeatMode).putString("last", id).putLong(id, position).apply()
+        val edit = positions.edit()
+        if (active.mediaMetadata.extras?.getBoolean("video") == true && active.duration > 0 && active.isCurrentMediaItemSeekable) {
+            edit.putLong("duration:$id", active.duration)
+            if(active.isPlaying) edit.putLong("watched:$id", System.currentTimeMillis())
+        }
+        edit.putBoolean("shuffle", active.shuffleModeEnabled).putInt("repeat", active.repeatMode).putString("last", id).putLong(id, position).apply()
     }
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
     override fun onDestroy() {
+        enrichment.close()
         handler.removeCallbacks(pulse)
         savePosition(); saveQueue(); cancelMix()
         stopStudioEvents()

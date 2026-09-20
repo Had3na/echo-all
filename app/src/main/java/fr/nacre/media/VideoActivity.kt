@@ -67,7 +67,7 @@ class VideoActivity : ComponentActivity() {
         setContent { NacreTheme { val current = player; if (current != null) VideoSurface(current, pip) else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } } }
     }
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) { super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig); pip = isInPictureInPictureMode }
-    override fun onStop() { if (!isChangingConfigurations) player?.pause(); super.onStop() }
+    override fun onStop() { if (!isChangingConfigurations && !isInPictureInPictureMode) player?.pause(); super.onStop() }
     override fun onDestroy() { future?.let { MediaController.releaseFuture(it) }; super.onDestroy() }
 
     @Composable
@@ -121,10 +121,10 @@ class VideoActivity : ComponentActivity() {
                 })
                 setOnTouchListener { _, event -> detector.onTouchEvent(event) }
                 view = this
-            } }, update = { it.player = controller; it.useController = !locked && !small; it.keepScreenOn = playing }, onReset = null, onRelease = { it.player = null }, modifier = Modifier.fillMaxSize().graphicsLayer { alpha = opacity.value })
-            if (!small) Row(Modifier.align(Alignment.TopCenter).safeDrawingPadding().background(Color.Black.copy(alpha=.65f)).horizontalScroll(rememberScrollState())) {
+            } }, update = { it.player = controller; it.useController = false; it.keepScreenOn = playing }, onReset = null, onRelease = { it.player = null }, modifier = Modifier.fillMaxSize().graphicsLayer { alpha = opacity.value })
+            if (!small && !locked) CinemaPlaybackControls(controller, controller.mediaMetadata.title?.toString().orEmpty(), { finish() }, tools = {
+                Row(Modifier.widthIn(max = 240.dp).horizontalScroll(rememberScrollState())) {
                 if (!locked) {
-                    IconButton(onClick = { finish() }) { Icon(Icons.Rounded.Close,"Revenir à Echo-All",tint=Color.White) }
                     IconButton(onClick = { subtitles.launch(arrayOf("*/*")) }) { Icon(Icons.Rounded.Subtitles,"Ajouter SRT ou VTT",tint=Color.White) }
                     IconButton(onClick = {
                         if (packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) runCatching { enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational(16,9)).build()) }.onFailure { message = "Fenêtre flottante indisponible." }
@@ -135,6 +135,8 @@ class VideoActivity : ComponentActivity() {
                 }
                 IconButton(onClick = { locked = !locked }) { Icon(if(locked) Icons.Rounded.Lock else Icons.Rounded.LockOpen, if(locked) "Déverrouiller" else "Verrouiller les commandes",tint=Color.White) }
             }
+            })
+            if (!small && locked) IconButton(onClick = { locked = false }, modifier = Modifier.align(Alignment.TopEnd).safeDrawingPadding()) { Icon(Icons.Rounded.Lock, "Déverrouiller", tint = Color.White) }
             if (message.isNotBlank() && !small) Text(message, Modifier.align(Alignment.Center).background(Color.Black.copy(alpha=.8f)).padding(16.dp),color=Color.White)
         }
     }

@@ -1,3 +1,56 @@
+# Echo-All 0.22
+
+Stockage torrent interne pour éviter le plantage FUSE observé sur le Samsung Android 16. [Détails](RELEASE-0.22.md).
+
+# Echo-All 0.21
+
+YTS ajouté aux sources de recherche ; indications pour 1337x via Torznab. [Détails et limites](RELEASE-0.21.md).
+
+# Echo-All 0.20
+
+Protection du démarrage du service torrent et diagnostic local des fermetures sur téléphone. [Détails](RELEASE-0.20.md).
+
+# Echo-All 0.19
+
+Correction de la recherche torrent lors du mélange des résultats The Pirate Bay et Internet Archive. [Détails du correctif](RELEASE-0.19.md).
+
+# Echo-All 0.18
+
+Recherche torrent par titre et téléchargement automatique à la validation. The Pirate Bay/APIbay, Internet Archive et flux Torznab configurables. [Guide et limites](RELEASE-0.18.md).
+
+# Echo-All 0.17
+
+Téléchargements torrent intégrés : magnets, fichiers .torrent, pause/reprise, bibliothèque et export des fichiers. [Guide et limites](RELEASE-0.17.md).
+
+# Echo-All 0.16
+
+Catalogues TMDB/Jikan, films, séries et animes, épisodes, plateformes par pays et liens vidéo personnels. [Installation, configuration et limites](RELEASE-0.16.md).
+
+# Echo-All 0.15
+
+YouTube : recherche, écoute en arrière-plan, playlists, chaînes et téléchargement dans la bibliothèque. [Notes de version](RELEASE-0.15.md).
+
+# Echo-All 0.14
+
+Notes : synchronisation Wi-Fi sans compte et thème Echo-All unifié. [Notes de version](RELEASE-0.14.md).
+
+# Echo-All 0.13
+
+Notes, cours au stylet et PDF : [notes de version](RELEASE-0.13.md).
+Version PC et serveur : [guide Notes](notes/README.md).
+
+# Echo-All 0.12
+
+Bibliothèque, lecteur et navigation affinés : [notes de version](RELEASE-0.12.md).
+
+# Echo-All 0.11
+
+Vidéos organisées, paroles et animations : [notes de version](RELEASE-0.11.md).
+
+# Echo-All 0.10
+
+Refonte visuelle : [notes de version](RELEASE-0.10.md).
+
 # Echo-All 0.9
 
 Version actuelle : [notes de version](RELEASE-0.9.md).

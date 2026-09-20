@@ -14,6 +14,21 @@ class OnlineCatalogTest {
         assertEquals("recording:\"Say \\\"Hi\\\"\" AND artist:\"A\\\\B\"", recordingQuery(" Say \"Hi\" ", "A\\B"))
         assertEquals("recording:\"Solo\"", recordingQuery("Solo", " "))
     }
+    @Test fun aShelfKeepsItsOwnFilterAndTheUsualGuards() {
+        val shelf = archiveRowQuery("collection:(feature_films)")
+        assertTrue(shelf.startsWith("(collection:(feature_films)) AND "))
+        assertTrue("mediatype:(movies)" in shelf)
+        // A shelf must not reach lending-only items any more than a search does.
+        assertTrue("-access-restricted-item:(true)" in shelf)
+        assertEquals(archiveSearchQuery("  ", MediaKind.VIDEO), shelf.substringAfter(") AND "))
+    }
+
+    @Test fun descriptionsLoseTheirMarkup() {
+        assertEquals("Un film.\nDe 1954.", plainText("<p>Un  film.</p><br/>De <b>1954</b>."))
+        assertEquals("L\u2019ami & moi", plainText("L&#39;ami &amp; moi"))
+        assertEquals("", plainText("   <div>  </div> "))
+    }
+
     @Test fun recordingsPreferOfficialAlbums() {
         val json = JSONObject("""{"recordings":[{"id":"r1","score":97,"title":"Morceau","length":215000,
             "artist-credit":[{"name":"Duo A","joinphrase":" & "},{"name":"B"}],

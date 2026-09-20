@@ -24,7 +24,7 @@ class MixTimeline {
 
     fun frame(now: Long, style: String): MixFrame {
         val p = progress(now)
-        val gains = if (manual || from > 0f) MixGains(1 - p, p) else shapedMix(p, style)
+        val gains = if (manual || from > 0f) equalPower(p) else shapedMix(p, style)
         val done = if (manual) blend >= .999f else now - start >= length
         return MixFrame(p, DeckMix(gains.outgoing, soundShape(p, style, false)), DeckMix(gains.incoming, soundShape(p, style, true)), done)
     }

@@ -1,0 +1,23 @@
+import {test,before,after} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createHash} from 'node:crypto';
+import {createNotesServer} from '../server.mjs';
+let app,url,token,other,temp;
+const note=(id='note-1')=>({id,title:'Cours',folder:'Maths',text:'Théorème',kind:'ink',pages:[[]],checks:[],pdfId:null,deleted:false,updatedAt:1});
+async function call(path,options={},auth=token){return fetch(url+path,{...options,headers:{'Content-Type':'application/json',...(auth?{Authorization:'Bearer '+auth}:{}),...options.headers}});}
+before(async()=>{temp=mkdtempSync(join(tmpdir(),'echo-notes-test-'));app=createNotesServer({dataDir:temp});app.createUser('one@example.test','a-test-password-123');app.createUser('two@example.test','another-password-123');await new Promise(ok=>app.server.listen(0,'127.0.0.1',ok));url='http://127.0.0.1:'+app.server.address().port;
+  token=(await (await call('/api/login',{method:'POST',body:JSON.stringify({email:'one@example.test',password:'a-test-password-123'})},null)).json()).token;
+  other=(await (await call('/api/login',{method:'POST',body:JSON.stringify({email:'two@example.test',password:'another-password-123'})},null)).json()).token;
+});
+after(async()=>{await new Promise(ok=>app.server.close(ok));rmSync(temp,{recursive:true,force:true});});
+test('authentication required; invalid passwords do not open a session',async()=>{assert.equal((await call('/api/notes',{},null)).status,401);assert.equal((await call('/api/login',{method:'POST',body:JSON.stringify({email:'one@example.test',password:'wrong'})},null)).status,401);});
+test('unknown origins are refused even with a valid token',async()=>{assert.equal((await call('/api/notes',{headers:{Origin:'https://untrusted.example'}})).status,403);assert.equal((await call('/api/notes',{headers:{Origin:'https://notes.echo-all.local'}})).status,200);});
+test('concurrent revisions retain the server copy and return conflict',async()=>{let res=await call('/api/notes/note-1',{method:'PUT',body:JSON.stringify({baseRev:0,doc:note()})});assert.equal(res.status,200);assert.equal((await res.json()).rev,1);res=await call('/api/notes/note-1',{method:'PUT',body:JSON.stringify({baseRev:0,doc:{...note(),text:'Other device'}})});assert.equal(res.status,409);assert.equal((await res.json()).doc.text,'Théorème');});
+test('accounts cannot read or overwrite each other’s notes',async()=>{assert.deepEqual(await (await call('/api/notes',{},other)).json(),[]);await call('/api/notes/note-1',{method:'PUT',body:JSON.stringify({baseRev:0,doc:{...note(),title:'Private'}})},other);const docs=await (await call('/api/notes')).json();assert.equal(docs[0].doc.title,'Cours');});
+test('deletion is revisioned and stale edits cannot resurrect a note',async()=>{assert.equal((await call('/api/notes/note-1',{method:'PUT',body:JSON.stringify({baseRev:1,doc:{...note(),deleted:true}})})).status,200);const res=await call('/api/notes/note-1',{method:'PUT',body:JSON.stringify({baseRev:1,doc:note()})});assert.equal(res.status,409);assert.equal((await res.json()).doc.deleted,true);});
+test('PDFs are hashed and scoped to accounts',async()=>{const bytes=Buffer.from('%PDF-1.7\nexample fixture'),id=createHash('sha256').update(bytes).digest('hex');assert.equal((await call('/api/files/'+id,{method:'PUT',headers:{'Content-Type':'application/pdf'},body:bytes})).status,200);assert.equal((await call('/api/files/'+id,{},other)).status,404);assert.deepEqual(Buffer.from(await (await call('/api/files/'+id)).arrayBuffer()),bytes);assert.equal((await call('/api/files/'+id,{method:'PUT',body:Buffer.from('invalid')})).status,400);});
+test('malformed strokes and absent PDFs are rejected',async()=>{const doc=note('bad');doc.pages=[[{tool:'pen',color:'#23334a',width:3,points:[[2,0,.5]]}]];assert.equal((await call('/api/notes/bad',{method:'PUT',body:JSON.stringify({baseRev:0,doc})})).status,400);assert.equal((await call('/api/notes/bad',{method:'PUT',body:JSON.stringify({baseRev:0,doc:{...note('bad'),kind:'pdf',pdfId:'a'.repeat(64)}})})).status,400);});
+test('logout revokes the bearer session',async()=>{assert.equal((await call('/api/logout',{method:'POST'},other)).status,200);assert.equal((await call('/api/notes',{},other)).status,401);});

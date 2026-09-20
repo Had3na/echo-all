@@ -18,6 +18,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
@@ -80,8 +82,9 @@ object Covers {
     }
 
     /** First image found among [urls] (Cover Art Archive, Internet Archive), stored like a picked cover. False if none exists. */
-    suspend fun saveFromUrls(context: Context, key: String, urls: List<String>): Boolean = withContext(Dispatchers.IO) {
+    suspend fun saveFromUrls(context: Context, key: String, urls: List<String>, onlyIfMissing: Boolean = false): Boolean = withContext(Dispatchers.IO) {
         val bytes = urls.firstNotNullOfOrNull { Online.image(it) } ?: return@withContext false
+        currentCoroutineContext().ensureActive()
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         var sample = 1
@@ -89,7 +92,8 @@ object Covers {
         val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample }) ?: error("Image illisible.")
         val file = newFile(context, key)
         file.outputStream().use { scaled(bitmap).compress(Bitmap.CompressFormat.JPEG, 88, it) }
-        deleteStored(context, StudioStore(context).setCover(key, file.absolutePath))
+        if (onlyIfMissing) { if (!StudioStore(context).setCoverIfMissing(key, file.absolutePath)) file.delete() }
+        else deleteStored(context, StudioStore(context).setCover(key, file.absolutePath))
         true
     }
 

@@ -1,0 +1,28 @@
+services:
+  notes:
+    build: .
+    restart: unless-stopped
+    environment:
+      ECHO_ORIGIN: https://${NOTES_DOMAIN:?Set NOTES_DOMAIN in .env}
+    volumes:
+      - notes_data:/data
+    expose:
+      - "4319"
+  https:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      NOTES_DOMAIN: ${NOTES_DOMAIN:?Set NOTES_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - notes
+volumes:
+  notes_data:
+  caddy_data:
+  caddy_config:

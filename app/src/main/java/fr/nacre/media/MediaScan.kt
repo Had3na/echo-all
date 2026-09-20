@@ -50,7 +50,9 @@ suspend fun scanPhone(context: Context): ScanResult = withContext(Dispatchers.IO
                 add(MediaStore.MediaColumns.DATE_ADDED)
                 if (Build.VERSION.SDK_INT >= 29) add(MediaStore.MediaColumns.RELATIVE_PATH)
                 if (kind != MediaKind.PHOTO) add("duration")
-                if (kind == MediaKind.MUSIC) { add(MediaStore.Audio.Media.ARTIST); add(MediaStore.Audio.Media.TITLE); add(MediaStore.Audio.Media.ALBUM) }
+                if (kind == MediaKind.MUSIC) { add(MediaStore.Audio.Media.ARTIST); add(MediaStore.Audio.Media.TITLE); add(MediaStore.Audio.Media.ALBUM)
+                    // The index only exposes a genre column from Android 11 on.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) add(MediaStore.Audio.Media.GENRE) }
             }.toTypedArray()
             val kindItems = mutableListOf<LibraryItem>()
             context.contentResolver.query(collection, projection, null, null, "date_added DESC")?.use { cursor ->
@@ -63,7 +65,8 @@ suspend fun scanPhone(context: Context): ScanResult = withContext(Dispatchers.IO
                         kind, "Téléphone", scanned = true, durationMs = number("duration"),
                         artist = if (kind == MediaKind.MUSIC) string("artist").takeUnless { it == "<unknown>" }.orEmpty() else "",
                         folder = if (Build.VERSION.SDK_INT >= 29) string("relative_path").trimEnd('/') else "Téléphone",
-                        addedAt = number("date_added") * 1000, album = if (kind == MediaKind.MUSIC) string("album") else "")
+                        addedAt = number("date_added") * 1000, album = if (kind == MediaKind.MUSIC) string("album") else "",
+                        genre = if (kind == MediaKind.MUSIC && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) string("genre") else "")
                 }
             } ?: error("Catalogue indisponible")
             result += kindItems
@@ -79,8 +82,8 @@ fun mergeScan(old: List<LibraryItem>, scan: ScanResult, allowed: Set<MediaKind>,
     val retained = old.filter { !it.scanned || (it.kind in allowed && it.kind !in scan.successfulKinds) }
     val found = scan.items.filterNot { it.uri in hidden }.map { item ->
         val previous = known[item.uri]
-        if (previous?.tagged == true) item.copy(favorite = previous.favorite, title = previous.title, artist = previous.artist, album = previous.album, tagged = true)
-        else item.copy(favorite = previous?.favorite ?: false)
+        if (previous?.tagged == true || previous?.autoMetadataBlocked == true) item.copy(favorite = previous.favorite, title = previous.title, artist = previous.artist, album = previous.album, tagged = previous.tagged, videoSection = previous.videoSection, videoCategory = previous.videoCategory, metadataUndo = previous.metadataUndo, autoMetadataBlocked = previous.autoMetadataBlocked)
+        else item.copy(favorite = previous?.favorite ?: false, videoSection = previous?.videoSection.orEmpty(), videoCategory = previous?.videoCategory.orEmpty(), metadataUndo = previous?.metadataUndo.orEmpty(), autoMetadataBlocked = previous?.autoMetadataBlocked ?: false)
     }
     return (retained + found).distinctBy { it.uri }
 }

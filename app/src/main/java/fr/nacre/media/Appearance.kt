@@ -23,6 +23,10 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -41,8 +45,18 @@ fun NacreTheme(content: @Composable () -> Unit) {
     val accent = if(dark) { if(selected.luminance()<.18f) lerp(selected,Color.White,.48f) else selected } else { if(selected.luminance()>.3f) lerp(selected,Color.Black,.45f) else selected }
     val background = if(dark) lerp(Color(0xFF101114),selected,.035f) else lerp(Color(0xFFFAFAFC),selected,.025f)
     val palette = if(dark) darkColorScheme() else lightColorScheme()
-    MaterialTheme(colorScheme=palette.copy(primary=accent,onPrimary=if(accent.luminance()>.4f)Color(0xFF101114) else Color.White,
-        secondary=accent,secondaryContainer=lerp(background,selected,.23f),onSecondaryContainer=if(dark)Color.White else Color.Black,
+    MaterialTheme(
+        typography = Typography(
+            headlineLarge = TextStyle(fontFamily=FontFamily.SansSerif,fontWeight=FontWeight.Bold,fontSize=32.sp,lineHeight=38.sp,letterSpacing=(-1).sp),
+            titleLarge = TextStyle(fontWeight=FontWeight.SemiBold,fontSize=22.sp,lineHeight=28.sp,letterSpacing=(-.5).sp),
+            titleMedium = TextStyle(fontWeight=FontWeight.SemiBold,fontSize=16.sp,lineHeight=24.sp),
+            bodyLarge = TextStyle(fontSize=16.sp,lineHeight=24.sp),
+            bodyMedium = TextStyle(fontSize=14.sp,lineHeight=21.sp),
+            labelLarge = TextStyle(fontWeight=FontWeight.SemiBold,fontSize=14.sp,lineHeight=20.sp)),
+        shapes = Shapes(small=RoundedCornerShape(12.dp),medium=RoundedCornerShape(20.dp),large=RoundedCornerShape(28.dp)),
+        colorScheme=palette.copy(primary=accent,onPrimary=if(accent.luminance()>.4f)Color(0xFF101114) else Color.White,
+        outline=if(dark)Color(0xFF696975) else Color(0xFF858590),outlineVariant=if(dark)Color(0xFF303039) else Color(0xFFE0E0E7),
+        onBackground=if(dark)Color(0xFFF2F2F5) else Color(0xFF17171D),secondary=accent,secondaryContainer=lerp(background,selected,.23f),onSecondaryContainer=if(dark)Color.White else Color.Black,
         background=background,surface=background,surfaceVariant=lerp(if(dark)Color(0xFF212227) else Color(0xFFE8E8EF),selected,.08f),
         onSurface=if(dark)Color(0xFFF2F2F5) else Color(0xFF17171D),onSurfaceVariant=if(dark)Color(0xFFB6B6C0) else Color(0xFF50505A)),content=content)
 }

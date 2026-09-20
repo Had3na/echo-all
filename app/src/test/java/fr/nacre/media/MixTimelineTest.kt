@@ -25,13 +25,15 @@ class MixTimelineTest {
         }
         assertEquals(DeckMix(1f, SoundShape.NEUTRAL), MixTimeline.SETTLED)
     }
-    @Test fun gainsStayBoundedAtEveryInstant() {
+    @Test fun gainsStayBoundedAndKeepTheirLoudnessAtEveryInstant() {
         for (style in styles) {
             val mix = MixTimeline().apply { begin(0, 2_000, false) }
             for (t in -500L..2_500L step 50) {
                 val frame = mix.frame(t, style)
                 assertTrue(frame.outgoing.gain in 0f..1f && frame.incoming.gain in 0f..1f)
-                assertEquals(1f, frame.outgoing.gain + frame.incoming.gain, .001f)
+                // Equal power: the two decks together stay as loud as one deck alone.
+                val power = frame.outgoing.gain * frame.outgoing.gain + frame.incoming.gain * frame.incoming.gain
+                assertEquals(1f, power, .001f)
             }
         }
     }
@@ -39,7 +41,7 @@ class MixTimelineTest {
         val mix = MixTimeline().apply { begin(0, 3_000, true) }
         mix.move(.4f)
         val frame = mix.frame(60_000, "club")
-        assertEquals(.4f, frame.progress, .001f); assertEquals(.6f, frame.outgoing.gain, .001f); assertFalse(frame.done)
+        assertEquals(.4f, frame.progress, .001f); assertEquals(0.7746f, frame.outgoing.gain, .001f); assertFalse(frame.done)
         mix.move(1.7f); assertEquals(1f, mix.blend, 0f); assertTrue(mix.frame(60_000, "club").done)
         mix.move(-1f); assertEquals(0f, mix.blend, 0f)
     }

@@ -41,6 +41,18 @@ fun AdvancedSettings(vm: LibraryViewModel, library: List<LibraryItem>) {
         HorizontalDivider();Text("Apparence et confort",fontSize=20.sp)
         Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)){listOf("dark" to "Sombre","light" to "Clair","system" to "Système").forEach{(key,label)->FilterChip(theme==key,{prefs.edit().putString("theme",key).apply()},{Text(label)})}}
         Row(verticalAlignment=Alignment.CenterVertically){Text("Réduire les animations",Modifier.weight(1f));Switch(reduced,{prefs.edit().putBoolean("reduceMotion",it).apply()})}
+        val wifiOnly=remember(revision){prefs.getBoolean("wifiOnlyStreaming",false)}
+        Row(verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text("Streaming YouTube en Wi-Fi seulement");Text("Environ 60 Mo par heure en qualité maximale. Les téléchargements ne sont jamais bloqués.",color=Muted,fontSize=12.sp)};Switch(wifiOnly,{prefs.edit().putBoolean("wifiOnlyStreaming",it).apply()})}
+        HorizontalDivider(); Text("Pendant l’écoute", fontSize=20.sp)
+        val smart=remember(revision){prefs.getBoolean("smartShuffle",true)}
+        Row(verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text("Aléatoire intelligent");Text("Enchaîne les titres par tempo proche et par genre, sans remettre le même artiste juste après.",color=Muted,fontSize=12.sp)};Switch(smart,{prefs.edit().putBoolean("smartShuffle",it).apply()})}
+        val tempo=remember(revision){prefs.getBoolean("tempoSync",false)}
+        Row(verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text("Caler le tempo automatiquement");Text("Mesure le BPM du titre en cours et du suivant, puis ajuste la vitesse du suivant de ±6 % au maximum. Au-delà, le morceau garde sa vitesse. Fichiers locaux seulement.",color=Muted,fontSize=12.sp)};Switch(tempo,{prefs.edit().putBoolean("tempoSync",it).apply()})}
+        for ((key, label) in listOf("autoMetadata" to "Pochettes et informations automatiques", "autoLyrics" to "Rechercher les paroles")) {
+            val enabled = remember(revision) { prefs.getBoolean(key, true) }
+            Row(verticalAlignment=Alignment.CenterVertically) { Text(label, Modifier.weight(1f)); Switch(enabled, { prefs.edit().putBoolean(key, it).apply() }) }
+        }
+        Text("Recherche en ligne sur MusicBrainz, Cover Art Archive et LRCLIB à partir du titre et de l’artiste. Les fichiers audio restent sur ton téléphone. Désactivée en mode privé.", fontSize=12.sp, color=Muted)
         HorizontalDivider();Text("Égaliseur",fontSize=20.sp)
         Text("Traitement intégré à Echo-All : même rendu sur tous les téléphones, casque et Bluetooth.",color=Muted)
         Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)){

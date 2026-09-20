@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {rangeFor,contained} from './server.mjs';
+test('byte ranges, suffixes and invalid ranges',()=>{assert.deepEqual(rangeFor('bytes=2-5',10),[2,5,true]);assert.deepEqual(rangeFor('bytes=-3',10),[7,9,true]);assert.deepEqual(rangeFor(undefined,10),[0,9,false]);for(const r of ['bytes=10-','bytes=3-1','bytes=0-1,4-5','bytes=-0'])assert.throws(()=>rangeFor(r,10))});
+test('paths cannot escape downloads',()=>{assert.throws(()=>contained('C:/Downloads','../secret'));assert.throws(()=>contained('C:/Downloads','C:/secret'));assert.ok(contained('C:/Downloads','film/movie.mp4').endsWith('movie.mp4'))});
