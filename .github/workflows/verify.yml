@@ -29,6 +29,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - run: npm ci --prefix notes && npm run vendor --prefix notes
       - run: npm ci --prefix pc-app
       - run: npm test --prefix pc-app
       - run: npm run dist --prefix pc-app

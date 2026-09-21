@@ -46,6 +46,7 @@ jobs:
         env:
           FIREBASE_WEB: ${{ secrets.FIREBASE_WEB_JSON }}
         run: node scripts/configure-web.mjs
+      - run: npm ci --prefix notes && npm run vendor --prefix notes
       - run: npm ci --prefix pc-app
       - run: npm test --prefix pc-app
       - run: npm run dist --prefix pc-app
@@ -67,5 +68,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION=$(node -p "require('./pc-app/package.json').version")
-          gh release create "v$VERSION" --draft --target "$GITHUB_SHA" --title "Echo-All $VERSION" --notes-file RELEASE-0.24.md
+          gh release create "v$VERSION" --draft --target "$GITHUB_SHA" --title "Echo-All $VERSION" --notes-file RELEASE-0.25.md
           find artifacts -type f \( -name '*.apk' -o -name '*.exe' -o -name 'version.json' \) -exec gh release upload "v$VERSION" {} +

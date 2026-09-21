@@ -3,7 +3,7 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithCredential, onA
 import { getFirestore, doc, getDoc, setDoc, collection, addDoc, query, where, onSnapshot, updateDoc, serverTimestamp, orderBy, limit } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import { getStorage, ref, uploadBytes, getBlob, deleteObject } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-storage.js';
 const $ = id => document.getElementById(id);
-if(window.echoDesktop) libraryLink.hidden = false;
+if(window.echoDesktop) { $('libraryLink').hidden=false; $('libraryLink').onclick=e=>{if(window.echoDesktop.returnToLibrary){e.preventDefault();window.echoDesktop.returnToLibrary();}}; }
 const status = text => $('status').textContent = text;
 let user, selected, stopChats, stopMessages;
 const blobs = new Set();
@@ -16,7 +16,16 @@ try {
  if (!config.projectId || !config.apiKey) throw new Error('Configuration Firebase incomplète.');
  const app = initializeApp(config), auth = getAuth(app), db = getFirestore(app), storage = getStorage(app);
  await setPersistence(auth, browserLocalPersistence);
- $('login').onclick = () => signInWithPopup(auth, new GoogleAuthProvider()).catch(e => status(e.message));
+ $('login').onclick = async () => {
+   $('login').disabled = true;
+   try {
+     if(window.echoDesktop?.googleLogin) {
+       const token = await window.echoDesktop.googleLogin();
+       await signInWithCredential(auth, GoogleAuthProvider.credential(token));
+     } else await signInWithPopup(auth, new GoogleAuthProvider());
+   } catch(e) { status(e.message); }
+   finally { $('login').disabled = false; }
+ };
  $('logout').onclick = () => signOut(auth).catch(e => status(e.message));
  onAuthStateChanged(auth, async current => {
    user = current; selected = null; stopChats?.(); clearMessages();
@@ -27,6 +36,7 @@ try {
    $('identity').textContent = `${user.displayName || 'Mon compte'} · Mon identifiant : ${user.uid}`;
    try { await setDoc(doc(db,'users',user.uid), {name:(user.displayName || 'Echo').slice(0,80)}); }
    catch(e) { status(e.message); return; }
+   if(auth.currentUser?.uid !== current.uid) return;
    stopChats = onSnapshot(query(collection(db,'chats'),where('members','array-contains',user.uid)), snapshot => {
      $('friends').replaceChildren();
      for (const chat of snapshot.docs) {

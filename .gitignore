@@ -37,3 +37,6 @@ pc-app/web/social.mjs
 pc-app/web/firebase-config.json
 release/
 *-debug.log
+
+pc-app/notes/
+pc-app/web/echo-logo.png

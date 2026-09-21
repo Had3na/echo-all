@@ -1,7 +1,8 @@
 const { app, BrowserWindow, dialog, shell } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-let server;
+let server, notesServer, notesWindow, socialWindow;
+if (process.env.ECHO_TEST_PROFILE) app.setPath("userData", process.env.ECHO_TEST_PROFILE);
 let checkedAt = 0;
 async function checkUpdates(manual = false) {
   if (!manual && Date.now() - checkedAt < 86400000) return;
@@ -39,13 +40,13 @@ else app.whenReady().then(async () => {
   server = module.server;
   await module.ready;
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const window = new BrowserWindow({ width: 1200, height: 820, minWidth: 700,
-    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, preload: path.join(__dirname, "preload.cjs") } });
+  const window = new BrowserWindow({ width: 1440, height: 960, minWidth: 780, minHeight: 700, backgroundColor: "#131216", autoHideMenuBar: true, show: false, icon: path.join(__dirname, "web", "echo-logo.png"),
+    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: false, preload: path.join(__dirname, "preload.cjs") } });
   window.webContents.setWindowOpenHandler(() => ({action: 'deny'}));
   window.webContents.on('will-navigate', (event, url) => {
     if (new URL(url).origin !== origin) event.preventDefault();
   });
-  window.webContents.session.setPermissionRequestHandler((_web, _permission, callback) => callback(false));
+  window.webContents.session.setPermissionRequestHandler((web, permission, callback) => callback(web === window.webContents && permission === 'speaker-selection'));
   const { Menu } = require('electron');
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     {label: 'Echo-All', submenu: [
@@ -56,7 +57,7 @@ else app.whenReady().then(async () => {
   ]));
     let signingIn = false;
   require('electron').ipcMain.handle('echo:google-login', async event => {
-    if (event.senderFrame !== window.webContents.mainFrame ||
+    if ((event.sender !== window.webContents && event.sender !== socialWindow?.webContents) || event.senderFrame !== event.sender.mainFrame ||
         new URL(event.senderFrame.url).origin !== origin ||
         new URL(event.senderFrame.url).pathname !== '/social.html') throw Error('Fenêtre non autorisée');
     if(signingIn) throw Error('Une connexion est déjà en cours.');
@@ -66,10 +67,60 @@ else app.whenReady().then(async () => {
     try { return await require('./google-login.cjs').googleLogin(config, shell); }
     finally { signingIn = false; }
   });
+  const { ipcMain } = require("electron");
+  const fs = require("node:fs"), settingsFile = path.join(app.getPath("userData"), "desktop-settings.json");
+  let desktopSettings = {notesWifi:false};
+  try { desktopSettings.notesWifi = JSON.parse(fs.readFileSync(settingsFile, "utf8")).notesWifi === true; } catch {}
+  const notesWifiAtStartup = desktopSettings.notesWifi;
+  function trusted(event) {
+    if (event.senderFrame !== window.webContents.mainFrame || new URL(event.senderFrame.url).origin !== origin) throw Error("Fenêtre non autorisée.");
+  }
+  ipcMain.handle("echo:settings", event => { trusted(event); return desktopSettings; });
+  ipcMain.handle("echo:notes-wifi", (event, enabled) => { trusted(event); desktopSettings.notesWifi = enabled === true; fs.writeFileSync(settingsFile, JSON.stringify(desktopSettings)); return true; });
+  ipcMain.handle("echo:open-social", async event => {
+    trusted(event);
+    if (socialWindow && !socialWindow.isDestroyed()) { socialWindow.focus(); return; }
+    socialWindow = new BrowserWindow({width:1000,height:820,minWidth:700,backgroundColor:"#131216",autoHideMenuBar:true,
+      webPreferences:{nodeIntegration:false,contextIsolation:true,sandbox:true,preload:path.join(__dirname,"preload.cjs")}});
+    socialWindow.on("closed",()=>{socialWindow=null;});
+    socialWindow.webContents.setWindowOpenHandler(()=>({action:"deny"}));
+    socialWindow.webContents.on("will-navigate",(event,url)=>{if(new URL(url).origin!==origin)event.preventDefault();});
+    await socialWindow.loadURL(origin+"/social.html");
+  });
+  ipcMain.handle("echo:return-library", event => {
+    if ((event.sender !== window.webContents && event.sender !== socialWindow?.webContents) || event.senderFrame !== event.sender.mainFrame || new URL(event.senderFrame.url).origin !== origin) throw Error("Fenêtre non autorisée.");
+    if (event.sender === socialWindow?.webContents) { socialWindow.close(); if(window.isMinimized())window.restore(); window.focus(); } else window.loadURL(origin);
+  });
+  ipcMain.handle("echo:version", event => { trusted(event); return app.getVersion(); });
+  ipcMain.handle("echo:check-updates", event => { trusted(event); return checkUpdates(true); });
+  ipcMain.handle("echo:add-folder", async event => {
+    trusted(event);
+    const choice = await dialog.showOpenDialog(window, { title: "Ajouter un dossier à Echo-All", properties: ["openDirectory", "multiSelections"] });
+    if (choice.canceled) return false;
+    for (const folder of choice.filePaths) module.addMediaFolder(folder);
+    return choice.filePaths.length > 0;
+  });
+  ipcMain.handle("echo:open-notes", async event => {
+    trusted(event);
+    if (notesWindow && !notesWindow.isDestroyed()) { if (notesWindow.isMinimized()) notesWindow.restore(); notesWindow.focus(); return; }
+    if (!notesServer) {
+      const notesModule = await import(pathToFileURL(path.join(__dirname, "notes", "server.mjs")));
+      const instance = notesModule.createNotesServer({ dataDir: path.join(app.getPath("userData"), "notes"), allowLocal: true, lanEnabled: notesWifiAtStartup });
+      await new Promise((resolve, reject) => { instance.server.once("error", reject); instance.server.listen(4319, notesWifiAtStartup ? "0.0.0.0" : "127.0.0.1", resolve); }).catch(error => { instance.server.close(); throw Error("Notes ne peut pas démarrer. Ferme une autre instance de Notes utilisant le port 4319. " + error.message); });
+      notesServer = instance.server;
+    }
+    const notesOrigin = "http://127.0.0.1:4319";
+    notesWindow = new BrowserWindow({ width: 1300, height: 900, minWidth: 750, minHeight: 650, title: "Echo-All · Notes", backgroundColor: "#131216", autoHideMenuBar: true,
+      webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } });
+    notesWindow.webContents.setWindowOpenHandler(() => ({action:"deny"}));
+    notesWindow.webContents.on("will-navigate", (event, url) => { if (new URL(url).origin !== notesOrigin) event.preventDefault(); });
+    await notesWindow.loadURL(notesOrigin);
+  });
   await window.loadURL(origin);
+  window.show();
   checkUpdates();
   window.on('focus', () => checkUpdates());
   app.on('second-instance', () => { if (window.isMinimized()) window.restore(); window.focus(); });
 }).catch(error => { dialog.showErrorBox('Echo-All', error.message); app.quit(); });
 app.on('window-all-closed', () => app.quit());
-app.on('before-quit', () => server?.close());
+app.on('will-quit', () => { server?.close(); notesServer?.close(); });

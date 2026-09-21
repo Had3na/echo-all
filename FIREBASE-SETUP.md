@@ -1,3 +1,7 @@
+# Projet actuel : echo-all-41fbc
+
+Le fichier .firebaserc cible ce projet. Pour autoriser cet ordinateur, ouvrir Connecter-Firebase.cmd et suivre la connexion Google. Le code doit rester sur cet ordinateur. Après autorisation, la configuration peut être terminée sans transmettre de mot de passe.
+
 # Activer les comptes Echo-All avec Firebase
 
 GitHub contient le code et les versions téléchargeables. Firebase héberge les comptes,

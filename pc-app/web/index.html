@@ -1,72 +1,50 @@
 <!doctype html>
-<html lang="fr">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Echo-All PC</title>
-<style>
-  :root {
-    --ink: #0d0f12; --panel: #191d23; --line: #262c35;
-    --text: #e8ecf1; --muted: #8d97a5; --accent: #e879f9;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--ink); color: var(--text);
-    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-  }
-  header {
-    position: sticky; top: 0; z-index: 2; background: var(--ink);
-    border-bottom: 1px solid var(--line); padding: 16px 20px;
-    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
-  }
-  h1 { font-size: 19px; margin: 0; font-weight: 600; }
-  .grow { flex: 1 1 260px; }
-  input[type=search], button {
-    font: inherit; color: var(--text); background: var(--panel);
-    border: 1px solid var(--line); border-radius: 10px; padding: 9px 13px;
-  }
-  input[type=search] { width: 100%; }
-  input[type=search]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-  button { cursor: pointer; }
-  button:hover { border-color: var(--accent); }
-  button[aria-pressed=true] { background: color-mix(in srgb, var(--accent) 22%, var(--panel)); border-color: var(--accent); }
-  main { padding: 18px 20px 140px; }
-  .count { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
-  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-  li button.row {
-    width: 100%; text-align: left; display: flex; gap: 14px; align-items: baseline;
-    padding: 11px 14px; border-radius: 12px;
-  }
-  li button.row[aria-current=true] { border-color: var(--accent); }
-  .title { font-weight: 500; }
-  .meta { color: var(--muted); font-size: 13px; margin-left: auto; white-space: nowrap; }
-  .sub { color: var(--muted); font-size: 13px; }
-  footer {
-    position: fixed; inset: auto 0 0 0; background: var(--panel);
-    border-top: 1px solid var(--line); padding: 12px 20px;
-  }
-  footer p { margin: 0 0 8px; font-size: 13px; }
-  audio, video { width: 100%; max-height: 42vh; border-radius: 10px; background: #000; }
-  .empty { color: var(--muted); padding: 40px 0; text-align: center; }
-</style>
-</head>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Echo-All</title><link rel="stylesheet" href="./style.css"></head>
 <body>
-<header>
-  <h1>Echo-All</h1><a href="/social.html" style="color:var(--accent)">Mon compte et mes amis</a>
-  <div class="grow"><input type="search" id="q" placeholder="Chercher un titre, un artiste, un dossier…" autocomplete="off"></div>
-  <button id="all" aria-pressed="true">Tout</button>
-  <button id="music" aria-pressed="false">Musique</button>
-  <button id="video" aria-pressed="false">Vidéos</button>
-  <button id="rescan">Réanalyser</button>
-</header>
-<main>
-  <p class="count" id="count">Chargement…</p>
-  <ul id="list"></ul>
+<aside class="sidebar">
+<a class="brand" href="#"><img src="./echo-logo.png" alt=""><span>ECHO<span class="brand-dot">.</span><small>TON UNIVERS, PARTOUT.</small></span></a>
+<p class="nav-label">MON ESPACE</p>
+<nav aria-label="Navigation principale">
+<button data-page="home" class="nav-item active"><span>⌂</span>Accueil</button>
+<button data-page="music" class="nav-item"><span>♫</span>Musique</button>
+<button data-page="video" class="nav-item"><span>▷</span>Vidéos</button>
+<button data-page="photo" class="nav-item"><span>▧</span>Photos</button>
+</nav>
+<p class="nav-label">CRÉER & EXPLORER</p>
+<nav aria-label="Espaces créatifs">
+<button data-page="studio" class="nav-item"><span>◉</span>Studio DJ<small class="badge">LIVE</small></button>
+<button id="open-notes" class="nav-item"><span>▤</span>Notes & PDF</button>
+<button data-page="playlists" class="nav-item"><span>≡</span>Mes playlists</button>
+<a href="/social.html" class="nav-item"><span>♧</span>Compte & amis</a>
+</nav>
+<div class="sidebar-bottom"><div class="offline"><i></i> Tes fichiers restent chez toi</div><button data-page="settings" class="nav-item"><span>⚙</span>Préférences</button><small id="app-version">Echo-All pour ordinateur</small></div>
+</aside>
+<div class="workspace">
+<header class="topbar"><div class="breadcrumb">Mon espace <span>/</span> <b id="breadcrumb">Accueil</b></div><div class="top-actions"><label class="search">⌕<input id="q" type="search" placeholder="Un titre, un artiste, un souvenir…" aria-label="Rechercher dans la bibliothèque"></label><button id="add-folder" class="button primary small">＋ Ajouter un dossier</button></div></header>
+<main id="main">
+<section id="home-page" class="page">
+<div class="page-heading"><div><p class="eyebrow">TA COLLECTION. TA CRÉATIVITÉ.</p><h1>Mon espace<span>.</span></h1><p class="subtle">De la première note à ton prochain mix.</p></div><button id="rescan" class="button">↻ Actualiser</button></div>
+<div class="hero-grid">
+<article class="hero studio-hero"><div class="hero-copy"><span class="pill"><i></i> STUDIO DJ</span><h2>Fais vibrer<br>ton univers.</h2><p>Deux platines. Tes morceaux.<br>Et tout l’espace pour créer.</p><button class="button primary" data-page="studio">Entrer dans le studio <span>↗</span></button></div><div class="record-art" aria-hidden="true"><div class="record record-back"></div><div class="record record-front"><div class="record-label">ECHO<small>SIDE A / 33 RPM</small></div></div><div class="sound-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div></article>
+<article class="hero notes-hero"><span class="eyebrow">TES IDÉES PRENNENT FORME</span><div class="note-art" aria-hidden="true"><span>Une idée.<br>Une page.<br><em>À toi de jouer.</em></span><div></div></div><h2>Notes & PDF</h2><p>Écrire, dessiner, annoter. Sans quitter Echo.</p><button class="text-button" id="home-notes">Ouvrir mon carnet <span>↗</span></button></article>
+</div>
+<div class="section-heading"><h2>Ta bibliothèque</h2><span class="subtle" id="library-summary"></span></div>
+<div class="category-grid"><button data-page="music" class="category"><span class="category-icon pink">♫</span><span><b>Musique</b><small id="music-count">0 titres</small></span><span>↗</span></button><button data-page="video" class="category"><span class="category-icon purple">▷</span><span><b>Vidéos</b><small id="video-count">0 vidéos</small></span><span>↗</span></button><button data-page="photo" class="category"><span class="category-icon amber">▧</span><span><b>Photos</b><small id="photo-count">0 photos</small></span><span>↗</span></button></div>
+<div class="section-heading"><h2>Ajouts récents</h2><button class="text-button" data-page="music">Tout explorer →</button></div><div id="recent-list" class="media-list"></div>
+</section>
+<section id="library-page" class="page" hidden><div class="page-heading"><div><p class="eyebrow">TA COLLECTION</p><h1 id="library-title">Musique</h1><p id="count" class="subtle"></p></div><div class="toolbar"><button id="favorites-only" class="button" aria-pressed="false">♡ Favoris</button><select id="sort" aria-label="Trier"><option value="recent">Ajouts récents</option><option value="title">Nom A–Z</option><option value="artist">Artiste</option></select></div></div><div id="list" class="media-list"></div></section>
+<section id="playlists-page" class="page" hidden><div class="page-heading"><div><p class="eyebrow">LES MORCEAUX QUI VONT ENSEMBLE</p><h1>Mes playlists</h1></div><button id="new-playlist" class="button primary">＋ Créer une playlist</button></div><div id="playlists" class="category-grid"></div><div class="section-heading"><h2 id="playlist-title"></h2></div><div id="playlist-items" class="media-list"></div></section>
+<section id="studio-page" class="page" hidden>
+<div class="page-heading"><div><p class="eyebrow">L'ESPACE DES MIXES QUI TE RESSEMBLENT</p><h1>Studio DJ<span>.</span></h1></div><div class="toolbar"><span class="pill"><i></i> AUDIO LOCAL</span><button id="record-mix" class="button"><span class="record-dot"></span> Enregistrer le mix</button></div></div>
+<div class="studio-grid"><div id="deck-a" class="deck"></div><div class="mixer"><p class="eyebrow">MASTER</p><div class="master-meter"><canvas id="master-meter" width="80" height="170" aria-label="Niveau de sortie"></canvas></div><label>Volume général<input type="range" id="master-volume" min="0" max="1" step=".01" value=".8"></label><div class="mixer-rule"></div><span class="eyebrow">CROSSFADER</span><div class="cross-label"><b>A</b><b>B</b></div><input id="crossfader" type="range" min="0" max="1" step=".001" value=".5" aria-label="Mix entre les platines A et B"><button id="cross-center" class="text-button">Centrer</button><div class="monitor-output"><label>Sortie préécoute<select id="monitor-output" aria-label="Sortie préécoute"><option value="default">Sortie système</option></select></label><button id="refresh-outputs" class="text-button">↻ Sorties audio</button></div><p class="mixer-hint">Les CUE et réglages de chaque morceau sont mémorisés sur cet ordinateur.</p></div><div id="deck-b" class="deck"></div></div>
+<div class="section-heading"><div><h2>Le prochain morceau</h2><span class="subtle">Charge un titre de ta bibliothèque sur la platine A ou B.</span></div><button class="button" id="studio-import">＋ Importer un dossier</button></div><div id="studio-library" class="media-list compact"></div>
+<p class="subtle studio-help">CUE : clic pour rappeler · Maj + clic pour mémoriser. La synchronisation cale le tempo à partir du BPM renseigné. Les boucles suivent la grille BPM indiquée.</p>
+</section>
+<section id="settings-page" class="page" hidden><div class="page-heading"><div><p class="eyebrow">UN ESPACE À TON IMAGE</p><h1>Préférences</h1></div></div><div class="settings-grid"><article class="panel"><h2>Apparence</h2><label>Thème<select id="theme"><option value="dark">Sombre</option><option value="light">Clair</option><option value="system">Système</option></select></label><label>Couleur d’accent<input id="accent" type="color" value="#e879f9"></label><label class="check"><input id="reduce-motion" type="checkbox"> Réduire les animations</label></article><article class="panel"><h2>Bibliothèque locale</h2><p class="subtle">Echo lit les médias dans les dossiers que tu choisis. Les fichiers d’origine restent à leur place.</p><div id="folders"></div><button id="settings-folder" class="button primary">Ajouter un dossier</button></article><article class="panel"><h2>Compte & mises à jour</h2><p class="subtle">Le même compte Google pour retrouver tes amis et tes conversations sur chaque appareil.</p><a href="/social.html" class="button">Mon compte et mes amis</a><button id="updates" class="button">Vérifier les mises à jour</button><p id="firebase-state" class="subtle"></p></article><article class="panel"><h2>Notes & studio</h2><label class="check"><input id="notes-wifi" type="checkbox"> Autoriser Notes sur le Wi-Fi local</label><p class="subtle">Association par code, échanges chiffrés. Cette option s’applique au prochain lancement d’Echo-All. Aucune modification du pare-feu n’est faite automatiquement.</p><p class="subtle">Espace : lecture / pause du lecteur.<br>Les pistes DJ restent actives quand tu ouvres Notes.<br>Le mix s’exporte en WebM/Opus, sans microphone.</p><p class="subtle">La lecture des formats vidéo dépend des codecs disponibles. YouTube et les torrents seront portés séparément.</p></article></div></section>
 </main>
-<footer id="player" hidden>
-  <p id="now"></p>
-  <div id="surface"></div>
-</footer>
-<script type="module" src="./app.mjs"></script>
-</body>
-</html>
+<footer id="player" class="player"><div class="now-cover">♫</div><div class="now-info"><b id="now-title">À toi de donner le ton.</b><small id="now-artist">Choisis un morceau dans ta bibliothèque</small></div><div class="transport"><div class="transport-buttons"><button id="shuffle" aria-label="Lecture aléatoire" aria-pressed="false">⇄</button><button id="previous" aria-label="Titre précédent">Ⅰ◀</button><button id="play-pause" class="play-button" aria-label="Lecture">▶</button><button id="next" aria-label="Titre suivant">▶Ⅰ</button><button id="repeat" aria-label="Répéter" aria-pressed="false">↻</button></div><div class="timeline"><small id="elapsed">0:00</small><input id="seek" type="range" min="0" max="100" value="0" aria-label="Position de lecture"><small id="duration">0:00</small></div></div><div class="player-options"><button id="now-favorite" aria-label="Ajouter aux favoris">♡</button><span>◖</span><input id="volume" type="range" min="0" max="1" value=".8" step=".01" aria-label="Volume"><button id="show-queue" aria-label="File d’attente">☷</button></div><audio id="audio"></audio></footer>
+</div>
+<dialog id="modal"><div class="dialog-head"><h2 id="modal-title"></h2><button id="close-modal" class="icon-button" aria-label="Fermer">✕</button></div><div id="modal-content"></div></dialog>
+<div id="toast" class="toast" role="status" hidden></div>
+<script type="module" src="./app.mjs"></script></body></html>

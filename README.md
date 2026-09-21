@@ -1,3 +1,7 @@
+# Echo-All PC 0.25
+
+Studio DJ, Notes/PDF et nouvelle interface : [fonctionnalités et validation](RELEASE-0.25.md).
+
 # Echo-All 0.24 (préparation)
 
 Version Windows, comptes Google et amis : [état et limites](RELEASE-0.24.md), [activation Firebase](FIREBASE-SETUP.md).

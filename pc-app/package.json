@@ -1,6 +1,6 @@
 {
   "name": "echo-all-desktop",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "private": true,
   "description": "Echo-All pour ordinateur",
   "author": "Had3na",
@@ -24,10 +24,12 @@
       "web/**/*",
       "package.json",
       "preload.cjs",
-      "google-login.cjs"
+      "google-login.cjs",
+      "notes/**/*"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "web/echo-logo.png"
     },
     "nsis": {
       "oneClick": false,

@@ -16,8 +16,8 @@ android {
         applicationId = "fr.nacre.media"
         minSdk = 26
         targetSdk = 36
-        versionCode = 24
-        versionName = "0.24.0"
+        versionCode = 25
+        versionName = "0.25.0"
     }
     signingConfigs {
         if (signing.containsKey("storeFile")) create("release") {
