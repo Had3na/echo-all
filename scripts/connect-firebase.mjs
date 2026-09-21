@@ -1,0 +1,13 @@
+import { spawnSync } from 'node:child_process';
+import { createInterface } from 'node:readline/promises';
+import { fileURLToPath } from 'node:url';
+const cli = fileURLToPath(new URL('../firebase/node_modules/firebase-tools/lib/bin/firebase.js', import.meta.url));
+const run = args => spawnSync(process.execPath, [cli, ...args], { stdio: 'inherit', shell: false });
+run(['login']);
+const rl = createInterface({ input: process.stdin, output: process.stdout });
+console.log('\nAutorise Firebase dans Google. Garde ton code prive.');
+const code = (await rl.question('Colle ici le code Google puis Entree (vide pour quitter) : ')).trim();
+if (code && /^[A-Za-z0-9_./~+-]+$/.test(code)) run(['login', code]);
+else if (code) console.log('Format du code non reconnu. Relance la connexion.');
+await rl.question('Appuie sur Entree pour fermer.');
+rl.close();

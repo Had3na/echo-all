@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signed() { return request.auth != null; }
+    function member(data) { return signed() && request.auth.uid in data.members; }
+    function accepted(id) {
+      let chat = get(/databases/$(database)/documents/chats/$(id)).data;
+      return member(chat) && chat.status == 'accepted';
+    }
+    match /users/{uid} {
+      allow get: if signed();
+      allow list: if false;
+      allow create, update: if signed() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 80;
+      allow delete: if signed() && request.auth.uid == uid;
+    }
+    match /chats/{id} {
+      allow read: if member(resource.data);
+      allow create: if signed()
+        && request.resource.data.keys().hasOnly(['members', 'sender', 'recipient', 'status'])
+        && request.resource.data.sender == request.auth.uid
+        && request.resource.data.recipient is string
+        && request.resource.data.recipient != request.auth.uid
+        && request.resource.data.members == [request.auth.uid, request.resource.data.recipient]
+        && request.resource.data.status == 'pending'
+        && exists(/databases/$(database)/documents/users/$(request.resource.data.recipient));
+      allow update: if member(resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && ((resource.data.status == 'pending' && request.auth.uid == resource.data.recipient
+             && request.resource.data.status == 'accepted')
+            || request.resource.data.status == 'blocked');
+      match /messages/{message} {
+        allow read: if accepted(id);
+        allow create: if accepted(id)
+          && request.resource.data.keys().hasOnly(['sender', 'text', 'file', 'name', 'createdAt'])
+          && request.resource.data.sender == request.auth.uid
+          && request.resource.data.text is string && request.resource.data.text.size() <= 4000
+          && request.resource.data.name is string && request.resource.data.name.size() <= 180
+          && request.resource.data.file is string
+          && (request.resource.data.file == '' ||
+              request.resource.data.file.matches('chats/' + id + '/' + request.auth.uid + '/[A-Za-z0-9-]+'))
+          && (request.resource.data.text.size() > 0 || request.resource.data.file != '')
+          && request.resource.data.createdAt == request.time;
+      }
+    }
+  }
+}

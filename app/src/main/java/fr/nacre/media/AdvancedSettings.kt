@@ -45,6 +45,8 @@ fun AdvancedSettings(vm: LibraryViewModel, library: List<LibraryItem>) {
         Row(verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text("Streaming YouTube en Wi-Fi seulement");Text("Environ 60 Mo par heure en qualité maximale. Les téléchargements ne sont jamais bloqués.",color=Muted,fontSize=12.sp)};Switch(wifiOnly,{prefs.edit().putBoolean("wifiOnlyStreaming",it).apply()})}
         HorizontalDivider(); Text("Mise à jour", fontSize=20.sp)
         UpdateSettings(prefs)
+        HorizontalDivider(); Text("Compte et amis", fontSize=20.sp)
+        AccountSettings()
         HorizontalDivider(); Text("Pendant l’écoute", fontSize=20.sp)
         val smart=remember(revision){prefs.getBoolean("smartShuffle",true)}
         Row(verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text("Aléatoire intelligent");Text("Enchaîne les titres par tempo proche et par genre, sans remettre le même artiste juste après.",color=Muted,fontSize=12.sp)};Switch(smart,{prefs.edit().putBoolean("smartShuffle",it).apply()})}

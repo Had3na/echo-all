@@ -25,3 +25,18 @@ notes/test-results/
 
 # Echo-All PC : jeton d'accès, certificats et journaux locaux
 pc-app/data/
+
+**/node_modules/
+pc-app/dist/
+app/google-services.json
+social-web/firebase-config.json
+.firebase/
+
+pc-app/web/social.html
+pc-app/web/social.mjs
+pc-app/web/firebase-config.json
+release/
+*-debug.log
+
+pc-app/notes/
+pc-app/web/echo-logo.png

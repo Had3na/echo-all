@@ -13,19 +13,13 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/**
- * Where the release manifest lives, and what to do with what it announces.
- *
- * The address is a setting rather than something built in, because the source repository is
- * private: a token baked into the application would simply be a published token. Pointing this at
- * the PC server on the local network keeps everything off the open internet.
- */
+/** GitHub Releases is the default source; a custom HTTPS manifest remains supported. */
 @Composable
 fun UpdateSettings(prefs: SharedPreferences) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val installed = remember { installedVersionCode(context) }
-    var url by remember { mutableStateOf(prefs.getString("updateUrl", "").orEmpty()) }
+    var url by remember { mutableStateOf(Updates.manifestUrl(prefs)) }
     var found by remember { mutableStateOf<UpdateInfo?>(null) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
